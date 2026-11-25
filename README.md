@@ -15,6 +15,8 @@ if env then
 	end
 end
 
+local KeySession
+
 local function requireRedxKey()
 	local HttpService = game:GetService("HttpService")
 	local Players = game:GetService("Players")
@@ -313,6 +315,11 @@ local function requireRedxKey()
 			end
 			local code = tonumber(response.StatusCode or response.Status)
 			if code == 200 and data.valid == true and data.status == "active" then
+				KeySession = {
+					secondsLeft = data.seconds_left,
+					expiresAt = data.expires_at,
+					receivedAt = os.clock()
+				}
 				finish(true)
 				return
 			end
@@ -510,8 +517,9 @@ local function dRemove(obj)
 	end)
 end
 
+local PanelDestroyed = false
 local Redx = {
-	_v = "5.0",
+	_v = "11.2",
 	HasDrawing = HAS_DRAWING
 }
 if env then
@@ -527,7 +535,7 @@ Redx.State = {
 		drawAimLine = false
 	},
 	FOV = {
-		enabled = true,
+		enabled = false,
 		radius = 235
 	},
 	ESP = {
@@ -549,7 +557,7 @@ Redx.State = {
 		color = Color3.fromRGB(230, 0, 28),
 		teamColor = Color3.fromRGB(80, 220, 80),
 		distance = 500,
-		thickness = 2,
+		thickness = 3,
 		textSize = 14
 	},
 	Godmode = {
@@ -619,7 +627,19 @@ if ScreenGui and GuiParent then
 	end)
 end
 
-Redx.FOV = {}
+Redx.FOV = { _listeners = {} }
+
+Redx.FOV.onChanged = function(fn)
+	if type(fn) == "function" then
+		table.insert(Redx.FOV._listeners, fn)
+	end
+end
+
+Redx.FOV._notify = function()
+	for _, fn in ipairs(Redx.FOV._listeners) do
+		pcall(fn)
+	end
+end
 
 local FOVFrame = create("Frame", {
 	Name = "FOVCircle",
@@ -628,6 +648,7 @@ local FOVFrame = create("Frame", {
 	Size = UDim2.new(0, Redx.State.FOV.radius * 2, 0, Redx.State.FOV.radius * 2),
 	BackgroundTransparency = 1,
 	Visible = Redx.State.FOV.enabled,
+	Active = false,
 	ZIndex = 1,
 	Parent = ScreenGui
 })
@@ -645,10 +666,12 @@ local function fovRefresh()
 	FOVFrame.Visible = S.enabled
 end
 
+Redx.FOV.onChanged(fovRefresh)
+
 Redx.FOV.Toggle = function(s)
 	local b = s and true or false
 	Redx.State.FOV.enabled = b
-	fovRefresh()
+	Redx.FOV._notify()
 	emitSync("FOV.enabled", b)
 	emitSync("Keybinds")
 end
@@ -656,7 +679,7 @@ end
 Redx.FOV.SetRadius = function(p)
 	local r = clamp(tonumber(p) or 235, 40, 450)
 	Redx.State.FOV.radius = r
-	fovRefresh()
+	Redx.FOV._notify()
 	emitSync("FOV.radius", r)
 end
 
@@ -909,8 +932,15 @@ local function chamsApply(plr)
 	if not plr.Character then
 		return
 	end
-	if ChamsData[plr] and ChamsData[plr].Parent then
+	local previous = ChamsData[plr]
+	if previous and previous.Parent == plr.Character and previous.Adornee == plr.Character then
 		return
+	end
+	if previous then
+		pcall(function()
+			previous:Destroy()
+		end)
+		ChamsData[plr] = nil
 	end
 	local ok, hl = pcall(Instance.new, "Highlight")
 	if not ok or not hl then
@@ -1022,7 +1052,7 @@ Redx.ESP.SetDistance = function(m)
 end
 
 Redx.ESP.SetThickness = function(px)
-	local v = clamp(tonumber(px) or 2, 1, 5)
+	local v = clamp(tonumber(px) or 3, 1, 6)
 	Redx.State.ESP.thickness = v
 	emitSync("ESP.thickness", v)
 end
@@ -1355,6 +1385,7 @@ Redx.Godmode = {}
 
 local godLoop = nil
 local godRespawn = nil
+local GodmodeRestore = setmetatable({}, { __mode = "k" })
 
 local function godApply()
 	if not LocalPlayer then
@@ -1366,6 +1397,9 @@ local function godApply()
 	end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
+		if not GodmodeRestore[hum] then
+			GodmodeRestore[hum] = { maxHealth = hum.MaxHealth, health = hum.Health }
+		end
 		pcall(function()
 			hum.MaxHealth = 1e9
 			hum.Health = 1e9
@@ -1414,14 +1448,14 @@ Redx.Godmode.Toggle = function(s)
 			end)
 			godRespawn = nil
 		end
-		if LocalPlayer and LocalPlayer.Character then
-			local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-			if hum then
-				pcall(function()
-					hum.MaxHealth = 100
-					hum.Health = 100
-				end)
-			end
+		for hum, original in pairs(GodmodeRestore) do
+			pcall(function()
+				hum.MaxHealth = original.maxHealth
+				if hum.Health > 0 then
+					hum.Health = math.min(original.health, original.maxHealth)
+				end
+			end)
+			GodmodeRestore[hum] = nil
 		end
 	end
 	emitSync("Godmode.enabled", b)
@@ -1429,18 +1463,39 @@ Redx.Godmode.Toggle = function(s)
 end
 
 Redx.Performance = {}
+local PerformanceRestore = {}
+
+local function applyPerformance()
+	local state = Redx.State.Performance
+	pcall(function()
+		local rendering = settings().Rendering
+		if state.fpsBoost or state.lowTextures then
+			if PerformanceRestore.quality == nil then
+				PerformanceRestore.quality = rendering.QualityLevel
+			end
+			rendering.QualityLevel = 1
+		elseif PerformanceRestore.quality ~= nil then
+			rendering.QualityLevel = PerformanceRestore.quality
+			PerformanceRestore.quality = nil
+		end
+	end)
+	pcall(function()
+		if state.fpsBoost or state.removeShadows then
+			if PerformanceRestore.shadows == nil then
+				PerformanceRestore.shadows = Lighting.GlobalShadows
+			end
+			Lighting.GlobalShadows = false
+		elseif PerformanceRestore.shadows ~= nil then
+			Lighting.GlobalShadows = PerformanceRestore.shadows
+			PerformanceRestore.shadows = nil
+		end
+	end)
+end
 
 Redx.Performance.FPSBoost = function(s)
 	local b = s and true or false
 	Redx.State.Performance.fpsBoost = b
-	pcall(function()
-		settings().Rendering.QualityLevel = b and 1 or 10
-	end)
-	if b then
-		pcall(function()
-			Lighting.GlobalShadows = false
-		end)
-	end
+	applyPerformance()
 	emitSync("Performance.fpsBoost", b)
 	emitSync("Keybinds")
 end
@@ -1448,18 +1503,14 @@ end
 Redx.Performance.RemoveShadows = function(s)
 	local b = s and true or false
 	Redx.State.Performance.removeShadows = b
-	pcall(function()
-		Lighting.GlobalShadows = not b
-	end)
+	applyPerformance()
 	emitSync("Performance.removeShadows", b)
 end
 
 Redx.Performance.LowTextures = function(s)
 	local b = s and true or false
 	Redx.State.Performance.lowTextures = b
-	pcall(function()
-		settings().Rendering.QualityLevel = b and 1 or 10
-	end)
+	applyPerformance()
 	emitSync("Performance.lowTextures", b)
 end
 
@@ -3135,7 +3186,7 @@ local SectionBuilders = {
 				Redx.ESP.SetThickness(v)
 			end,
 			1,
-			5,
+			6,
 			" px",
 			"ESP.thickness"
 		)
@@ -3921,7 +3972,7 @@ local NavScroll = create("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	Position = UDim2.new(0, 8, 0, 94),
-	Size = UDim2.new(1, -16, 1, -144),
+	Size = UDim2.new(1, -16, 1, -170),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 0,
@@ -3936,9 +3987,10 @@ create("UIListLayout", {
 })
 
 local UserCard = create("Frame", {
+	Name = "UserCard",
 	AnchorPoint = Vector2.new(0, 1),
 	Position = UDim2.new(0, 8, 1, -8),
-	Size = UDim2.new(1, -16, 0, 36),
+	Size = UDim2.new(1, -16, 0, 62),
 	BackgroundColor3 = Theme.CategoryBg,
 	BorderSizePixel = 0,
 	ZIndex = 12,
@@ -3948,7 +4000,7 @@ addCorner(UserCard, 6)
 addStroke(UserCard, Theme.CategoryStroke, 1)
 
 local AvatarWrap = create("Frame", {
-	Position = UDim2.new(0, 5, 0.5, -13),
+	Position = UDim2.new(0, 5, 0, 5),
 	Size = UDim2.new(0, 26, 0, 26),
 	BackgroundColor3 = Color3.fromRGB(12, 18, 34),
 	BorderSizePixel = 0,
@@ -4029,6 +4081,64 @@ create("TextLabel", {
 	ZIndex = 13,
 	Parent = roleLine
 })
+
+do
+	local label = create("TextLabel", {
+		Name = "KeyDurationLabel",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 5, 0, 37),
+		Size = UDim2.new(1, -10, 0, 18),
+		Font = Enum.Font.GothamMedium,
+		Text = "Duração da Key: 00:00",
+		TextColor3 = Theme.Accent,
+		TextSize = 9,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 13,
+		Parent = UserCard
+	})
+	create("UITextSizeConstraint", { MinTextSize = 7, MaxTextSize = 9, Parent = label })
+	local remaining = KeySession and tonumber(KeySession.secondsLeft)
+	local receivedAt = KeySession and KeySession.receivedAt or os.clock()
+	if not remaining or remaining ~= remaining or math.abs(remaining) == math.huge then
+		remaining = nil
+		if KeySession and type(KeySession.expiresAt) == "string" then
+			pcall(function()
+				local expiry = DateTime.fromIsoDate(KeySession.expiresAt)
+				if expiry then
+					remaining = expiry.UnixTimestampMillis / 1000 - DateTime.now().UnixTimestampMillis / 1000
+					receivedAt = os.clock()
+				end
+			end)
+		end
+	end
+	local lastText
+	local function refreshKeyDuration()
+		local text = "Duração da Key: indisponível"
+		if remaining then
+			local total = math.max(0, math.ceil(remaining - math.max(0, os.clock() - receivedAt)))
+			local days = math.floor(total / 86400)
+			local hours = math.floor(total / 3600) % 24
+			local minutes = math.floor(total / 60) % 60
+			local seconds = total % 60
+			local duration
+			if days > 0 then
+				duration = string.format("%dd %02d:%02d:%02d", days, hours, minutes, seconds)
+			elseif total >= 3600 then
+				duration = string.format("%02d:%02d:%02d", hours, minutes, seconds)
+			else
+				duration = string.format("%02d:%02d", minutes, seconds)
+			end
+			text = "Duração da Key: " .. duration
+		end
+		if text ~= lastText then
+			lastText = text
+			label.Text = text
+		end
+	end
+	refreshKeyDuration()
+	trackConn(RunService.Heartbeat:Connect(refreshKeyDuration))
+end
 
 local TopHeader = create("Frame", {
 	Name = "TopHeader",
@@ -4812,7 +4922,35 @@ trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end))
 
-Redx.UI = {}
+Redx.Theme = Theme
+Redx.Connections = Connections
+Redx.track = trackConn
+Redx.create = create
+Redx.corner = addCorner
+Redx.stroke = addStroke
+Redx.tween = tween
+Redx.createBrandLogo = createBrandLogo
+Redx.createIcon = createIcon
+Redx.attachDraggable = attachDraggable
+Redx.buildToggle = buildToggleControl
+Redx.buildSlider = buildSliderControl
+Redx.buildButton = buildActionButton
+Redx.buildStyleSelector = buildSegmentedSelector
+Redx.buildPalette = buildPaletteControl
+Redx.buildPartSelector = function(parent, getter, onPick)
+	return buildSegmentedSelector(parent, "Alvo", getter, onPick, {
+		{ tag = "torso", label = "Tronco" },
+		{ tag = "head", label = "Cabeça" }
+	})
+end
+
+Redx.UI = {
+	ScreenGui = ScreenGui,
+	MainWindow = MainWindow,
+	MainScale = MainScale,
+	MinBtn = MinimizePillBtn,
+	FOVFrame = FOVFrame
+}
 
 Redx.UI.Show = function()
 	if ScreenGui then
@@ -4829,12 +4967,27 @@ Redx.UI.Hide = function()
 end
 
 Redx.UI.Destroy = function()
+	if PanelDestroyed then
+		return
+	end
+	PanelDestroyed = true
+	if Redx.State.Godmode.enabled then
+		Redx.Godmode.Toggle(false)
+	end
+	Redx.State.Performance.fpsBoost = false
+	Redx.State.Performance.removeShadows = false
+	Redx.State.Performance.lowTextures = false
+	applyPerformance()
+	if Redx.State.Bypass.unlockFPS then
+		Redx.Bypass.UnlockFPS(false)
+	end
 	for i = 1, #Connections do
 		pcall(function()
 			Connections[i]:Disconnect()
 		end)
 	end
 	Connections = {}
+	Redx.Connections = Connections
 	for plr in pairs(ESPData) do
 		espDestroy(plr)
 	end
@@ -4863,10 +5016,18 @@ Redx.UI.Destroy = function()
 	if env then
 		env.Redx = nil
 		env.RedxPainelUnload = nil
+		env.RedxPainelSetLogo = nil
+		if env.RedxGui == ScreenGui then
+			env.RedxGui = nil
+		end
 	end
+	Redx.FOV._listeners = {}
+	SyncListeners = {}
+	LogoListeners = {}
 end
 
 if env then
+	env.RedxGui = ScreenGui
 	env.RedxPainelUnload = Redx.UI.Destroy
 	env.RedxPainelSetLogo = resolveLogoUrl
 end
