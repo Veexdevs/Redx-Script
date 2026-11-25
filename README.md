@@ -3,8 +3,341 @@ local PANEL_NAME = "Redx Painel"
 local PANEL_SUBTITLE = "By Denolk and Ghost V1.0"
 
 local env = (type(getgenv) == "function" and getgenv()) or _G
-if env and type(env.RedxPainelUnload) == "function" then
-	pcall(env.RedxPainelUnload)
+if env then
+	if type(env.RedxKeyGateClose) == "function" then
+		pcall(env.RedxKeyGateClose)
+	end
+	if env.Redx and type(env.Redx.UI) == "table" and type(env.Redx.UI.Destroy) == "function" then
+		pcall(env.Redx.UI.Destroy)
+	end
+	if type(env.RedxPainelUnload) == "function" then
+		pcall(env.RedxPainelUnload)
+	end
+end
+
+local function requireRedxKey()
+	local HttpService = game:GetService("HttpService")
+	local Players = game:GetService("Players")
+	local UserInputService = game:GetService("UserInputService")
+	local player = Players.LocalPlayer
+	local parent
+	pcall(function()
+		if type(gethui) == "function" then
+			parent = gethui()
+		end
+	end)
+	if not parent then
+		pcall(function()
+			parent = game:GetService("CoreGui")
+		end)
+	end
+	if not parent and player then
+		parent = player:WaitForChild("PlayerGui", 5)
+	end
+	if not parent then
+		return false
+	end
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "RedxKeyGate"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 10000
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	local parented = pcall(function()
+		gui.Parent = parent
+	end)
+	if not parented and player then
+		parented = pcall(function()
+			gui.Parent = player:WaitForChild("PlayerGui", 5)
+		end)
+	end
+	if not parented or not gui.Parent then
+		gui:Destroy()
+		return false
+	end
+
+	local completed = Instance.new("BindableEvent")
+	local connections = {}
+	local finished = false
+	local authorized = false
+	local busy = false
+	local attempt = 0
+	local closeGate
+	local function connect(signal, fn)
+		local conn = signal:Connect(fn)
+		table.insert(connections, conn)
+		return conn
+	end
+	local function make(class, props)
+		local obj = Instance.new(class)
+		for k, v in pairs(props) do
+			obj[k] = v
+		end
+		return obj
+	end
+	local function corner(obj, radius)
+		make("UICorner", { CornerRadius = UDim.new(0, radius), Parent = obj })
+	end
+	local background = make("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.35,
+		BorderSizePixel = 0,
+		Active = true,
+		Parent = gui
+	})
+	local card = make("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(400, 292),
+		BackgroundColor3 = Color3.fromRGB(14, 9, 12),
+		BorderSizePixel = 0,
+		Parent = background
+	})
+	corner(card, 10)
+	make("UIStroke", { Color = Color3.fromRGB(130, 6, 22), Thickness = 1, Parent = card })
+	local function fit()
+		local camera = workspace.CurrentCamera
+		local size = camera and camera.ViewportSize or Vector2.new(800, 600)
+		return math.min(1, math.max(0.2, (size.X - 24) / 400), math.max(0.2, (size.Y - 24) / 292))
+	end
+	local scale = make("UIScale", { Scale = fit(), Parent = card })
+	local camera = workspace.CurrentCamera
+	if camera then
+		connect(camera:GetPropertyChangedSignal("ViewportSize"), function()
+			scale.Scale = fit()
+		end)
+	end
+	local header = make("TextLabel", {
+		Size = UDim2.new(1, -56, 0, 48),
+		Position = UDim2.fromOffset(20, 2),
+		BackgroundTransparency = 1,
+		Text = PANEL_NAME .. "  |  KEY",
+		TextColor3 = Color3.fromRGB(230, 0, 28),
+		Font = Enum.Font.GothamBold,
+		TextSize = 17,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Active = true,
+		Parent = card
+	})
+	local close = make("TextButton", {
+		Position = UDim2.new(1, -42, 0, 10),
+		Size = UDim2.fromOffset(30, 30),
+		BackgroundTransparency = 1,
+		Text = "×",
+		TextColor3 = Color3.fromRGB(240, 236, 238),
+		Font = Enum.Font.GothamBold,
+		TextSize = 24,
+		Parent = card
+	})
+	make("TextLabel", {
+		Position = UDim2.fromOffset(20, 50),
+		Size = UDim2.new(1, -40, 0, 42),
+		BackgroundTransparency = 1,
+		Text = "Insira sua Key para liberar o painel.\n" .. PANEL_SUBTITLE,
+		TextColor3 = Color3.fromRGB(208, 202, 206),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		Parent = card
+	})
+	local input = make("TextBox", {
+		Position = UDim2.fromOffset(20, 106),
+		Size = UDim2.new(1, -40, 0, 42),
+		BackgroundColor3 = Color3.fromRGB(28, 16, 22),
+		BorderSizePixel = 0,
+		Text = "",
+		PlaceholderText = "REDX-...",
+		PlaceholderColor3 = Color3.fromRGB(122, 112, 118),
+		TextColor3 = Color3.fromRGB(240, 236, 238),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		ClearTextOnFocus = false,
+		MultiLine = false,
+		Parent = card
+	})
+	corner(input, 6)
+	local status = make("TextLabel", {
+		Position = UDim2.fromOffset(20, 156),
+		Size = UDim2.new(1, -40, 0, 48),
+		BackgroundTransparency = 1,
+		Text = "O painel só inicia após a validação online.",
+		TextColor3 = Color3.fromRGB(208, 202, 206),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextWrapped = true,
+		Parent = card
+	})
+	local submit = make("TextButton", {
+		Position = UDim2.fromOffset(20, 220),
+		Size = UDim2.new(1, -40, 0, 44),
+		BackgroundColor3 = Color3.fromRGB(230, 0, 28),
+		BorderSizePixel = 0,
+		Text = "VALIDAR KEY",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		Parent = card
+	})
+	corner(submit, 6)
+
+	local function finish(ok)
+		if finished then
+			return
+		end
+		finished = true
+		authorized = ok == true
+		attempt = attempt + 1
+		input.Text = ""
+		for _, conn in ipairs(connections) do
+			conn:Disconnect()
+		end
+		gui:Destroy()
+		if env and env.RedxKeyGateClose == closeGate then
+			env.RedxKeyGateClose = nil
+		end
+		completed:Fire()
+	end
+	closeGate = function()
+		finish(false)
+	end
+	if env then
+		env.RedxKeyGateClose = closeGate
+	end
+	connect(close.Activated, closeGate)
+	connect(gui.Destroying, closeGate)
+
+	local dragStart, startPosition, dragInput
+	connect(header.InputBegan, function(event)
+		if event.UserInputType == Enum.UserInputType.MouseButton1 or event.UserInputType == Enum.UserInputType.Touch then
+			dragInput = event
+			dragStart = event.Position
+			startPosition = card.Position
+		end
+	end)
+	connect(UserInputService.InputChanged, function(event)
+		if dragInput and (event.UserInputType == Enum.UserInputType.MouseMovement or event == dragInput) then
+			local delta = event.Position - dragStart
+			card.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+		end
+	end)
+	connect(UserInputService.InputEnded, function(event)
+		if event == dragInput or event.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragInput = nil
+		end
+	end)
+
+	local function deviceId()
+		local id
+		if type(gethwid) == "function" then
+			pcall(function()
+				id = gethwid()
+			end)
+		end
+		if type(id) ~= "string" or id == "" then
+			pcall(function()
+				id = game:GetService("RbxAnalyticsService"):GetClientId()
+			end)
+		end
+		if type(id) == "string" and id ~= "" then
+			return id
+		end
+		return nil
+	end
+	local function validate()
+		if finished or busy then
+			return
+		end
+		local key = input.Text:match("^%s*(.-)%s*$")
+		if key == "" or #key > 256 then
+			status.Text = "Insira uma Key válida."
+			return
+		end
+		local id = deviceId()
+		if not id then
+			status.Text = "Não foi possível identificar este aparelho."
+			return
+		end
+		busy = true
+		attempt = attempt + 1
+		local token = attempt
+		submit.Text = "VALIDANDO..."
+		submit.AutoButtonColor = false
+		status.Text = "Consultando servidor..."
+		local function reject(message)
+			if finished or token ~= attempt then
+				return
+			end
+			attempt = attempt + 1
+			busy = false
+			submit.Text = "VALIDAR KEY"
+			submit.AutoButtonColor = true
+			status.Text = message
+		end
+		task.delay(15, function()
+			reject("Tempo esgotado. Verifique sua conexão e tente novamente.")
+		end)
+		task.spawn(function()
+			local ok, response = pcall(function()
+				local options = {
+					Url = "https://redx-panel-key.lovable.app/api/public/v1/check",
+					Method = "POST",
+					Headers = { ["Content-Type"] = "application/json" },
+					Body = HttpService:JSONEncode({ key = key, device_id = id })
+				}
+				local send = (type(request) == "function" and request)
+					or (type(http_request) == "function" and http_request)
+					or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+					or (type(http) == "table" and type(http.request) == "function" and http.request)
+				if send then
+					return send(options)
+				end
+				return HttpService:RequestAsync(options)
+			end)
+			key = nil
+			if finished or token ~= attempt then
+				return
+			end
+			if not ok or type(response) ~= "table" or type(response.Body) ~= "string" then
+				reject("Erro de conexão. Acesso não liberado.")
+				return
+			end
+			local decoded, data = pcall(function()
+				return HttpService:JSONDecode(response.Body)
+			end)
+			if not decoded or type(data) ~= "table" then
+				reject("Resposta inválida do servidor. Tente novamente.")
+				return
+			end
+			local code = tonumber(response.StatusCode or response.Status)
+			if code == 200 and data.valid == true and data.status == "active" then
+				finish(true)
+				return
+			end
+			local messages = {
+				invalid = "Key inválida.",
+				banned = "Esta Key foi banida.",
+				expired = "Esta Key expirou.",
+				device_limit = "Limite de aparelhos atingido."
+			}
+			reject(messages[data.status] or "Validação recusada pelo servidor.")
+		end)
+	end
+	connect(submit.Activated, validate)
+	connect(input.FocusLost, function(enterPressed)
+		if enterPressed then
+			validate()
+		end
+	end)
+	completed.Event:Wait()
+	completed:Destroy()
+	return authorized
+end
+
+if not requireRedxKey() then
+	return
 end
 
 local Players = game:GetService("Players")
@@ -14,17 +347,26 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
 local spawnTask = (task and task.spawn) or function(fn, ...)
 	return coroutine.wrap(fn)(...)
 end
 local waitTask = (task and task.wait) or wait
-local clampNum = math.clamp or function(v, lo, hi)
+local clamp = math.clamp or function(v, lo, hi)
 	if v < lo then
 		return lo
 	elseif v > hi then
 		return hi
 	end
 	return v
+end
+
+local function isColor3Value(c)
+	if type(typeof) == "function" then
+		return typeof(c) == "Color3"
+	end
+	return type(c) == "table" and c.R ~= nil and c.G ~= nil and c.B ~= nil
 end
 
 local Theme = {
@@ -66,26 +408,40 @@ local function trackConn(conn)
 end
 
 local function create(className, props, children)
-	local inst = Instance.new(className)
+	local ok, inst = pcall(Instance.new, className)
+	if not ok or not inst then
+		return nil
+	end
 	if props then
 		for k, v in pairs(props) do
 			if k ~= "Parent" then
-				inst[k] = v
+				pcall(function()
+					inst[k] = v
+				end)
 			end
 		end
 		if props.Parent then
-			inst.Parent = props.Parent
+			pcall(function()
+				inst.Parent = props.Parent
+			end)
 		end
 	end
 	if children then
 		for i = 1, #children do
-			children[i].Parent = inst
+			if children[i] then
+				pcall(function()
+					children[i].Parent = inst
+				end)
+			end
 		end
 	end
 	return inst
 end
 
 local function addCorner(parent, radius)
+	if not parent then
+		return nil
+	end
 	return create("UICorner", {
 		CornerRadius = UDim.new(0, radius or 6),
 		Parent = parent
@@ -93,6 +449,9 @@ local function addCorner(parent, radius)
 end
 
 local function addStroke(parent, color, thickness, transparency)
+	if not parent then
+		return nil
+	end
 	return create("UIStroke", {
 		Color = color or Theme.CardStroke,
 		Thickness = thickness or 1,
@@ -103,6 +462,9 @@ local function addStroke(parent, color, thickness, transparency)
 end
 
 local function tween(obj, duration, goal)
+	if not obj then
+		return nil
+	end
 	local ok, tw = pcall(function()
 		return TweenService:Create(obj, TweenInfo.new(duration or 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal)
 	end)
@@ -116,6 +478,1017 @@ local function tween(obj, duration, goal)
 		end)
 	end
 	return nil
+end
+
+local HAS_DRAWING = (type(Drawing) == "table" and type(Drawing.new) == "function")
+local function dNew(cls)
+	if not HAS_DRAWING then
+		return nil
+	end
+	local ok, obj = pcall(Drawing.new, cls)
+	if ok then
+		return obj
+	end
+	return nil
+end
+
+local function dSet(obj, prop, val)
+	if not obj then
+		return
+	end
+	pcall(function()
+		obj[prop] = val
+	end)
+end
+
+local function dRemove(obj)
+	if not obj then
+		return
+	end
+	pcall(function()
+		obj:Remove()
+	end)
+end
+
+local Redx = {
+	_v = "5.0",
+	HasDrawing = HAS_DRAWING
+}
+if env then
+	env.Redx = Redx
+end
+
+Redx.State = {
+	Aimbot = {
+		enabled = false,
+		target = "torso",
+		smooth = 15,
+		radius = 235,
+		drawAimLine = false
+	},
+	FOV = {
+		enabled = true,
+		radius = 235
+	},
+	ESP = {
+		enabled = false,
+		box = true,
+		boxStyle = "corner",
+		name = true,
+		showDistance = true,
+		health = true,
+		healthText = true,
+		healthBar = true,
+		headDot = true,
+		skeleton = false,
+		tracer = false,
+		tracerStyle = "base",
+		chams = false,
+		aimLine = false,
+		teamCheck = false,
+		color = Color3.fromRGB(230, 0, 28),
+		teamColor = Color3.fromRGB(80, 220, 80),
+		distance = 500,
+		thickness = 2,
+		textSize = 14
+	},
+	Godmode = {
+		enabled = false
+	},
+	Performance = {
+		fpsBoost = false,
+		removeShadows = false,
+		lowTextures = false
+	},
+	Bypass = {
+		stealth = false,
+		unlockFPS = false
+	}
+}
+
+local SyncListeners = {}
+local function onSync(channel, fn)
+	if not SyncListeners[channel] then
+		SyncListeners[channel] = {}
+	end
+	table.insert(SyncListeners[channel], fn)
+end
+
+local function emitSync(channel, val)
+	local list = SyncListeners[channel]
+	if list then
+		for i = 1, #list do
+			pcall(list[i], val)
+		end
+	end
+end
+
+local GuiParent = nil
+pcall(function()
+	if type(gethui) == "function" then
+		GuiParent = gethui()
+	end
+end)
+if not GuiParent then
+	pcall(function()
+		GuiParent = game:GetService("CoreGui")
+	end)
+end
+if not GuiParent and LocalPlayer then
+	pcall(function()
+		GuiParent = LocalPlayer:WaitForChild("PlayerGui", 3)
+	end)
+end
+
+local ScreenGui = create("ScreenGui", {
+	Name = "RedxPainelGui",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+})
+
+pcall(function()
+	if syn and type(syn.protect_gui) == "function" and GuiParent == game:GetService("CoreGui") then
+		syn.protect_gui(ScreenGui)
+	end
+end)
+
+if ScreenGui and GuiParent then
+	pcall(function()
+		ScreenGui.Parent = GuiParent
+	end)
+end
+
+Redx.FOV = {}
+
+local FOVFrame = create("Frame", {
+	Name = "FOVCircle",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(0, Redx.State.FOV.radius * 2, 0, Redx.State.FOV.radius * 2),
+	BackgroundTransparency = 1,
+	Visible = Redx.State.FOV.enabled,
+	ZIndex = 1,
+	Parent = ScreenGui
+})
+addCorner(FOVFrame, 9999)
+addStroke(FOVFrame, Color3.fromRGB(245, 245, 247), 1.3, 0.15)
+
+local function fovRefresh()
+	local S = Redx.State.FOV
+	if not FOVFrame then
+		return
+	end
+	local d = math.floor(S.radius * 2)
+	FOVFrame.Size = UDim2.new(0, d, 0, d)
+	FOVFrame.Position = UDim2.fromScale(0.5, 0.5)
+	FOVFrame.Visible = S.enabled
+end
+
+Redx.FOV.Toggle = function(s)
+	local b = s and true or false
+	Redx.State.FOV.enabled = b
+	fovRefresh()
+	emitSync("FOV.enabled", b)
+	emitSync("Keybinds")
+end
+
+Redx.FOV.SetRadius = function(p)
+	local r = clamp(tonumber(p) or 235, 40, 450)
+	Redx.State.FOV.radius = r
+	fovRefresh()
+	emitSync("FOV.radius", r)
+end
+
+Redx.Aimbot = {}
+
+local function aimGetTargetPart(plr)
+	local char = plr.Character
+	if not char then
+		return nil
+	end
+	local target = Redx.State.Aimbot.target
+	if target == "head" then
+		return char:FindFirstChild("Head")
+	else
+		return char:FindFirstChild("HumanoidRootPart")
+			or char:FindFirstChild("UpperTorso")
+			or char:FindFirstChild("Torso")
+	end
+end
+
+local function aimFindBest()
+	camera = workspace.CurrentCamera or camera
+	if not camera then
+		return nil
+	end
+	local S = Redx.State.Aimbot
+	local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+	local best, bestD = nil, S.radius
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer then
+			local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				local part = aimGetTargetPart(plr)
+				if part then
+					local sp, onScreen = camera:WorldToViewportPoint(part.Position)
+					if onScreen then
+						local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+						if d < bestD then
+							best, bestD = part, d
+						end
+					end
+				end
+			end
+		end
+	end
+	return best
+end
+
+Redx.Aimbot.Toggle = function(s)
+	local b = s and true or false
+	Redx.State.Aimbot.enabled = b
+	emitSync("Aimbot.enabled", b)
+	emitSync("Keybinds")
+end
+
+Redx.Aimbot.SetTarget = function(t)
+	if t == "head" or t == "torso" then
+		Redx.State.Aimbot.target = t
+		emitSync("Aimbot.target", t)
+	end
+end
+
+Redx.Aimbot.SetSmooth = function(n)
+	local v = clamp(tonumber(n) or 15, 1, 100)
+	Redx.State.Aimbot.smooth = v
+	emitSync("Aimbot.smooth", v)
+end
+
+Redx.Aimbot.SetRadius = function(p)
+	local v = clamp(tonumber(p) or 235, 40, 450)
+	Redx.State.Aimbot.radius = v
+	emitSync("Aimbot.radius", v)
+end
+
+Redx.Aimbot.SetDrawLine = function(s)
+	local b = s and true or false
+	Redx.State.Aimbot.drawAimLine = b
+	Redx.State.ESP.aimLine = b
+	emitSync("Aimbot.drawAimLine", b)
+end
+
+local aimLineObj = nil
+if HAS_DRAWING then
+	aimLineObj = dNew("Line")
+end
+if aimLineObj then
+	dSet(aimLineObj, "Thickness", 1)
+	dSet(aimLineObj, "Transparency", 0.4)
+	dSet(aimLineObj, "Visible", false)
+end
+
+trackConn(RunService.RenderStepped:Connect(function(dt)
+	camera = workspace.CurrentCamera or camera
+	local S = Redx.State
+	if not S.Aimbot.enabled or not camera then
+		if aimLineObj then
+			dSet(aimLineObj, "Visible", false)
+		end
+		return
+	end
+	local target = aimFindBest()
+	if not target then
+		if aimLineObj then
+			dSet(aimLineObj, "Visible", false)
+		end
+		return
+	end
+	pcall(function()
+		local goal = CFrame.new(camera.CFrame.Position, target.Position)
+		local t = (100 - S.Aimbot.smooth) / 100
+		local alpha = clamp(t * (dt or 0.016) * 60, 0, 1)
+		camera.CFrame = camera.CFrame:Lerp(goal, alpha)
+	end)
+
+	if aimLineObj then
+		if S.Aimbot.drawAimLine then
+			local sp, vis = camera:WorldToViewportPoint(target.Position)
+			if sp and vis then
+				dSet(aimLineObj, "From", Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2))
+				dSet(aimLineObj, "To", Vector2.new(sp.X, sp.Y))
+				dSet(aimLineObj, "Color", S.ESP.color)
+				dSet(aimLineObj, "Visible", true)
+			else
+				dSet(aimLineObj, "Visible", false)
+			end
+		else
+			dSet(aimLineObj, "Visible", false)
+		end
+	end
+end))
+
+Redx.ESP = {}
+
+local ESPData = {}
+local ChamsData = {}
+
+local function espNewFor(plr)
+	local S = Redx.State.ESP
+	local d = {}
+	d.box = dNew("Square")
+	d.boxFill = dNew("Square")
+	d.name = dNew("Text")
+	d.distance = dNew("Text")
+	d.healthText = dNew("Text")
+	d.healthBg = dNew("Square")
+	d.healthFill = dNew("Square")
+	d.headDot = dNew("Circle")
+	d.tracer = dNew("Line")
+	d.corners = {}
+	for i = 1, 8 do
+		d.corners[i] = dNew("Line")
+	end
+	d.skel = {}
+	for i = 1, 15 do
+		d.skel[i] = dNew("Line")
+	end
+
+	if d.box then
+		dSet(d.box, "Filled", false)
+		dSet(d.box, "Transparency", 0.7)
+		dSet(d.box, "Thickness", S.thickness)
+	end
+	if d.boxFill then
+		dSet(d.boxFill, "Filled", true)
+		dSet(d.boxFill, "Transparency", 0.8)
+	end
+	if d.name then
+		dSet(d.name, "Size", S.textSize)
+		dSet(d.name, "Center", true)
+		dSet(d.name, "Outline", true)
+		dSet(d.name, "OutlineColor", Color3.fromRGB(0, 0, 0))
+	end
+	if d.distance then
+		dSet(d.distance, "Size", math.max(10, S.textSize - 2))
+		dSet(d.distance, "Center", true)
+		dSet(d.distance, "Outline", true)
+	end
+	if d.healthText then
+		dSet(d.healthText, "Size", math.max(10, S.textSize - 3))
+		dSet(d.healthText, "Center", true)
+		dSet(d.healthText, "Outline", true)
+	end
+	if d.healthBg then
+		dSet(d.healthBg, "Filled", true)
+		dSet(d.healthBg, "Color", Color3.fromRGB(0, 0, 0))
+		dSet(d.healthBg, "Transparency", 0.4)
+	end
+	if d.healthFill then
+		dSet(d.healthFill, "Filled", true)
+	end
+	if d.headDot then
+		dSet(d.headDot, "Filled", true)
+	end
+	if d.tracer then
+		dSet(d.tracer, "Transparency", 0.4)
+	end
+	for i = 1, #d.corners do
+		if d.corners[i] then
+			dSet(d.corners[i], "Thickness", S.thickness)
+		end
+	end
+	for i = 1, #d.skel do
+		if d.skel[i] then
+			dSet(d.skel[i], "Thickness", S.thickness)
+		end
+	end
+
+	ESPData[plr] = d
+	return d
+end
+
+local function espSetVisible(d, visible)
+	if not d then
+		return
+	end
+	local props = { "box", "boxFill", "name", "distance", "healthText", "healthBg", "healthFill", "headDot", "tracer" }
+	for i = 1, #props do
+		dSet(d[props[i]], "Visible", visible)
+	end
+	if d.corners then
+		for i = 1, #d.corners do
+			dSet(d.corners[i], "Visible", visible)
+		end
+	end
+	if d.skel then
+		for i = 1, #d.skel do
+			dSet(d.skel[i], "Visible", visible)
+		end
+	end
+end
+
+local function espDestroy(plr)
+	local d = ESPData[plr]
+	if not d then
+		return
+	end
+	for k, v in pairs(d) do
+		if k == "skel" or k == "corners" then
+			for i = 1, #v do
+				dRemove(v[i])
+			end
+		else
+			dRemove(v)
+		end
+	end
+	ESPData[plr] = nil
+end
+
+local function chamsApply(plr)
+	if not plr.Character then
+		return
+	end
+	if ChamsData[plr] and ChamsData[plr].Parent then
+		return
+	end
+	local ok, hl = pcall(Instance.new, "Highlight")
+	if not ok or not hl then
+		return
+	end
+	pcall(function()
+		hl.FillColor = Redx.State.ESP.color
+		hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+		hl.FillTransparency = 0.5
+		hl.OutlineTransparency = 0
+		hl.Adornee = plr.Character
+		hl.Parent = plr.Character
+	end)
+	ChamsData[plr] = hl
+end
+
+local function chamsRemove(plr)
+	local hl = ChamsData[plr]
+	if hl then
+		pcall(function()
+			hl:Destroy()
+		end)
+		ChamsData[plr] = nil
+	end
+end
+
+local function chamsClear()
+	for plr in pairs(ChamsData) do
+		chamsRemove(plr)
+	end
+end
+
+local function isTeammate(plr)
+	if not Redx.State.ESP.teamCheck then
+		return false
+	end
+	if not LocalPlayer then
+		return false
+	end
+	local myTeam = LocalPlayer.Team
+	if not myTeam then
+		return false
+	end
+	return plr.Team == myTeam
+end
+
+local function getSkeletonPairs(char)
+	local R15 = {
+		{ "Head", "UpperTorso" },
+		{ "UpperTorso", "LowerTorso" },
+		{ "UpperTorso", "LeftUpperArm" },
+		{ "LeftUpperArm", "LeftLowerArm" },
+		{ "LeftLowerArm", "LeftHand" },
+		{ "UpperTorso", "RightUpperArm" },
+		{ "RightUpperArm", "RightLowerArm" },
+		{ "RightLowerArm", "RightHand" },
+		{ "LowerTorso", "LeftUpperLeg" },
+		{ "LeftUpperLeg", "LeftLowerLeg" },
+		{ "LeftLowerLeg", "LeftFoot" },
+		{ "LowerTorso", "RightUpperLeg" },
+		{ "RightUpperLeg", "RightLowerLeg" },
+		{ "RightLowerLeg", "RightFoot" }
+	}
+	local R6 = {
+		{ "Head", "Torso" },
+		{ "Torso", "Left Arm" },
+		{ "Torso", "Right Arm" },
+		{ "Torso", "Left Leg" },
+		{ "Torso", "Right Leg" }
+	}
+	local result = {}
+	local hasR15 = char:FindFirstChild("UpperTorso") ~= nil
+	local list = hasR15 and R15 or R6
+	for i = 1, #list do
+		local pair = list[i]
+		local a = char:FindFirstChild(pair[1])
+		local b = char:FindFirstChild(pair[2])
+		if a and b then
+			table.insert(result, { a, b })
+		end
+	end
+	return result
+end
+
+Redx.ESP.Toggle = function(s)
+	local b = s and true or false
+	Redx.State.ESP.enabled = b
+	if not b then
+		for plr in pairs(ESPData) do
+			espDestroy(plr)
+		end
+		chamsClear()
+	end
+	emitSync("ESP.enabled", b)
+	emitSync("Keybinds")
+end
+
+Redx.ESP.SetColor = function(c)
+	if isColor3Value(c) then
+		Redx.State.ESP.color = c
+		emitSync("ESP.color", c)
+	end
+end
+
+Redx.ESP.SetDistance = function(m)
+	local v = clamp(tonumber(m) or 500, 50, 2000)
+	Redx.State.ESP.distance = v
+	emitSync("ESP.distance", v)
+end
+
+Redx.ESP.SetThickness = function(px)
+	local v = clamp(tonumber(px) or 2, 1, 5)
+	Redx.State.ESP.thickness = v
+	emitSync("ESP.thickness", v)
+end
+
+Redx.ESP.SetTextSize = function(sz)
+	local v = clamp(tonumber(sz) or 14, 10, 24)
+	Redx.State.ESP.textSize = v
+	for _, d in pairs(ESPData) do
+		if d.name then
+			dSet(d.name, "Size", v)
+		end
+		if d.distance then
+			dSet(d.distance, "Size", math.max(10, v - 2))
+		end
+		if d.healthText then
+			dSet(d.healthText, "Size", math.max(10, v - 3))
+		end
+	end
+	emitSync("ESP.textSize", v)
+end
+
+Redx.ESP.SetBoxStyle = function(style)
+	if style == "normal" or style == "corner" or style == "filled" then
+		Redx.State.ESP.boxStyle = style
+		emitSync("ESP.boxStyle", style)
+	end
+end
+
+Redx.ESP.SetTracerStyle = function(style)
+	if style == "base" or style == "top" or style == "mouse" then
+		Redx.State.ESP.tracerStyle = style
+		emitSync("ESP.tracerStyle", style)
+	end
+end
+
+Redx.ESP.SetTeamCheck = function(s)
+	local b = s and true or false
+	Redx.State.ESP.teamCheck = b
+	emitSync("ESP.teamCheck", b)
+end
+
+Redx.ESP.SetElement = function(el, s)
+	local b = s and true or false
+	local S = Redx.State.ESP
+	if el == "box" then
+		S.box = b
+		emitSync("ESP.box", b)
+	elseif el == "name" then
+		S.name = b
+		emitSync("ESP.name", b)
+	elseif el == "showDistance" then
+		S.showDistance = b
+		emitSync("ESP.showDistance", b)
+	elseif el == "health" then
+		S.health = b
+		emitSync("ESP.health", b)
+	elseif el == "healthText" then
+		S.healthText = b
+		emitSync("ESP.healthText", b)
+	elseif el == "healthBar" then
+		S.healthBar = b
+		emitSync("ESP.healthBar", b)
+	elseif el == "headDot" then
+		S.headDot = b
+		emitSync("ESP.headDot", b)
+	elseif el == "skeleton" then
+		S.skeleton = b
+		emitSync("ESP.skeleton", b)
+	elseif el == "tracer" then
+		S.tracer = b
+		emitSync("ESP.tracer", b)
+	elseif el == "chams" then
+		S.chams = b
+		if not b then
+			chamsClear()
+		end
+		emitSync("ESP.chams", b)
+		emitSync("Keybinds")
+	elseif el == "aimLine" then
+		S.aimLine = b
+		Redx.State.Aimbot.drawAimLine = b
+		emitSync("Aimbot.drawAimLine", b)
+	end
+end
+
+trackConn(RunService.RenderStepped:Connect(function()
+	local S = Redx.State.ESP
+	if not S.enabled then
+		return
+	end
+	camera = workspace.CurrentCamera or camera
+	if not camera then
+		return
+	end
+
+	local camPos = camera.CFrame.Position
+	local centerV = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer then
+			local char = plr.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+			if char and hum and hum.Health > 0 and hrp and not isTeammate(plr) then
+				local dist = (hrp.Position - camPos).Magnitude
+				if dist <= S.distance then
+					local d = ESPData[plr] or espNewFor(plr)
+					local pos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+					if onScreen then
+						local headP = camera:WorldToViewportPoint(hrp.Position + Vector3.new(0, 1.5, 0))
+						local feetP = camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+						local h = math.abs(feetP.Y - headP.Y)
+						local w = h * 0.55
+						local x, y = pos.X - w / 2, pos.Y - h / 2
+						local col = S.color
+						local th = S.thickness
+
+						if S.box then
+							if S.boxStyle == "normal" then
+								dSet(d.box, "Size", Vector2.new(w, h))
+								dSet(d.box, "Position", Vector2.new(x, y))
+								dSet(d.box, "Color", col)
+								dSet(d.box, "Thickness", th)
+								dSet(d.box, "Visible", true)
+							else
+								dSet(d.box, "Visible", false)
+							end
+
+							if S.boxStyle == "filled" then
+								dSet(d.boxFill, "Size", Vector2.new(w, h))
+								dSet(d.boxFill, "Position", Vector2.new(x, y))
+								dSet(d.boxFill, "Color", col)
+								dSet(d.boxFill, "Visible", true)
+								dSet(d.box, "Size", Vector2.new(w, h))
+								dSet(d.box, "Position", Vector2.new(x, y))
+								dSet(d.box, "Color", col)
+								dSet(d.box, "Thickness", th)
+								dSet(d.box, "Visible", true)
+							else
+								dSet(d.boxFill, "Visible", false)
+							end
+
+							if S.boxStyle == "corner" then
+								local cLen = math.min(w, h) * 0.25
+								local function drawSeg(line, x1, y1, x2, y2)
+									dSet(line, "From", Vector2.new(x1, y1))
+									dSet(line, "To", Vector2.new(x2, y2))
+									dSet(line, "Color", col)
+									dSet(line, "Thickness", th)
+									dSet(line, "Visible", true)
+								end
+								drawSeg(d.corners[1], x, y, x + cLen, y)
+								drawSeg(d.corners[2], x, y, x, y + cLen)
+								drawSeg(d.corners[3], x + w, y, x + w - cLen, y)
+								drawSeg(d.corners[4], x + w, y, x + w, y + cLen)
+								drawSeg(d.corners[5], x, y + h, x + cLen, y + h)
+								drawSeg(d.corners[6], x, y + h, x, y + h - cLen)
+								drawSeg(d.corners[7], x + w, y + h, x + w - cLen, y + h)
+								drawSeg(d.corners[8], x + w, y + h, x + w, y + h - cLen)
+							else
+								for i = 1, #d.corners do
+									dSet(d.corners[i], "Visible", false)
+								end
+							end
+						else
+							dSet(d.box, "Visible", false)
+							dSet(d.boxFill, "Visible", false)
+							for i = 1, #d.corners do
+								dSet(d.corners[i], "Visible", false)
+							end
+						end
+
+						if S.name then
+							local txt = plr.Name
+							if S.showDistance then
+								txt = txt .. " [" .. math.floor(dist) .. "m]"
+							end
+							dSet(d.name, "Text", txt)
+							dSet(d.name, "Size", S.textSize)
+							dSet(d.name, "Position", Vector2.new(pos.X, y - S.textSize - 4))
+							dSet(d.name, "Color", col)
+							dSet(d.name, "Visible", true)
+						else
+							dSet(d.name, "Visible", false)
+						end
+
+						if S.health and S.healthBar then
+							local hpPct = clamp(hum.Health / math.max(1, hum.MaxHealth), 0, 1)
+							local barW = 3
+							local barX = x - barW - 4
+							local barY = y
+							local barH = h
+							dSet(d.healthBg, "Size", Vector2.new(barW, barH))
+							dSet(d.healthBg, "Position", Vector2.new(barX, barY))
+							dSet(d.healthBg, "Color", Color3.fromRGB(0, 0, 0))
+							dSet(d.healthBg, "Visible", true)
+							local fillH = barH * hpPct
+							local fillY = barY + (barH - fillH)
+							local hpCol = Color3.fromRGB(80, 220, 80)
+							if hpPct < 0.3 then
+								hpCol = Color3.fromRGB(230, 40, 40)
+							elseif hpPct < 0.6 then
+								hpCol = Color3.fromRGB(230, 200, 40)
+							end
+							dSet(d.healthFill, "Size", Vector2.new(barW, fillH))
+							dSet(d.healthFill, "Position", Vector2.new(barX, fillY))
+							dSet(d.healthFill, "Color", hpCol)
+							dSet(d.healthFill, "Visible", true)
+						else
+							dSet(d.healthBg, "Visible", false)
+							dSet(d.healthFill, "Visible", false)
+						end
+
+						if S.health and S.healthText then
+							dSet(d.healthText, "Text", tostring(math.floor(hum.Health)) .. "/" .. tostring(math.floor(hum.MaxHealth)))
+							dSet(d.healthText, "Position", Vector2.new(x + w + 16, y + h - 14))
+							dSet(d.healthText, "Color", Color3.fromRGB(220, 220, 220))
+							dSet(d.healthText, "Visible", true)
+						else
+							dSet(d.healthText, "Visible", false)
+						end
+
+						if S.headDot then
+							local head = char:FindFirstChild("Head")
+							if head then
+								local hp, hs = camera:WorldToViewportPoint(head.Position)
+								if hs then
+									dSet(d.headDot, "Position", Vector2.new(hp.X, hp.Y))
+									dSet(d.headDot, "Radius", 3)
+									dSet(d.headDot, "Color", col)
+									dSet(d.headDot, "Visible", true)
+								else
+									dSet(d.headDot, "Visible", false)
+								end
+							else
+								dSet(d.headDot, "Visible", false)
+							end
+						else
+							dSet(d.headDot, "Visible", false)
+						end
+
+						if S.tracer then
+							local fromP
+							if S.tracerStyle == "base" then
+								fromP = Vector2.new(centerV.X, camera.ViewportSize.Y)
+							elseif S.tracerStyle == "top" then
+								fromP = Vector2.new(centerV.X, 0)
+							else
+								local okM, m = pcall(function()
+									return UserInputService:GetMouseLocation()
+								end)
+								fromP = okM and Vector2.new(m.X, m.Y) or centerV
+							end
+							dSet(d.tracer, "From", fromP)
+							dSet(d.tracer, "To", Vector2.new(pos.X, pos.Y + h / 2))
+							dSet(d.tracer, "Color", col)
+							dSet(d.tracer, "Thickness", th)
+							dSet(d.tracer, "Visible", true)
+						else
+							dSet(d.tracer, "Visible", false)
+						end
+
+						if S.skeleton then
+							local pairsList = getSkeletonPairs(char)
+							local used = 0
+							for i = 1, #pairsList do
+								if i > #d.skel then
+									break
+								end
+								local pair = pairsList[i]
+								local p1, s1 = camera:WorldToViewportPoint(pair[1].Position)
+								local p2, s2 = camera:WorldToViewportPoint(pair[2].Position)
+								if s1 and s2 then
+									used = used + 1
+									local line = d.skel[used]
+									dSet(line, "From", Vector2.new(p1.X, p1.Y))
+									dSet(line, "To", Vector2.new(p2.X, p2.Y))
+									dSet(line, "Color", col)
+									dSet(line, "Thickness", th)
+									dSet(line, "Visible", true)
+								end
+							end
+							for i = used + 1, #d.skel do
+								dSet(d.skel[i], "Visible", false)
+							end
+						else
+							for i = 1, #d.skel do
+								dSet(d.skel[i], "Visible", false)
+							end
+						end
+					else
+						espSetVisible(d, false)
+					end
+
+					if S.chams then
+						chamsApply(plr)
+						if ChamsData[plr] then
+							pcall(function()
+								ChamsData[plr].FillColor = S.color
+							end)
+						end
+					else
+						chamsRemove(plr)
+					end
+				else
+					local d = ESPData[plr]
+					if d then
+						espSetVisible(d, false)
+					end
+					chamsRemove(plr)
+				end
+			else
+				local d = ESPData[plr]
+				if d then
+					espSetVisible(d, false)
+				end
+				chamsRemove(plr)
+			end
+		end
+	end
+end))
+
+trackConn(Players.PlayerRemoving:Connect(function(plr)
+	espDestroy(plr)
+	chamsRemove(plr)
+end))
+
+Redx.Godmode = {}
+
+local godLoop = nil
+local godRespawn = nil
+
+local function godApply()
+	if not LocalPlayer then
+		return
+	end
+	local char = LocalPlayer.Character
+	if not char then
+		return
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		pcall(function()
+			hum.MaxHealth = 1e9
+			hum.Health = 1e9
+		end)
+	end
+end
+
+Redx.Godmode.Toggle = function(s)
+	local b = s and true or false
+	Redx.State.Godmode.enabled = b
+	if b then
+		godApply()
+		if godLoop then
+			pcall(function()
+				godLoop:Disconnect()
+			end)
+		end
+		godLoop = RunService.Heartbeat:Connect(function()
+			if Redx.State.Godmode.enabled then
+				godApply()
+			end
+		end)
+		if godRespawn then
+			pcall(function()
+				godRespawn:Disconnect()
+			end)
+		end
+		if LocalPlayer and LocalPlayer.CharacterAdded then
+			godRespawn = LocalPlayer.CharacterAdded:Connect(function()
+				waitTask(0.5)
+				if Redx.State.Godmode.enabled then
+					godApply()
+				end
+			end)
+		end
+	else
+		if godLoop then
+			pcall(function()
+				godLoop:Disconnect()
+			end)
+			godLoop = nil
+		end
+		if godRespawn then
+			pcall(function()
+				godRespawn:Disconnect()
+			end)
+			godRespawn = nil
+		end
+		if LocalPlayer and LocalPlayer.Character then
+			local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				pcall(function()
+					hum.MaxHealth = 100
+					hum.Health = 100
+				end)
+			end
+		end
+	end
+	emitSync("Godmode.enabled", b)
+	emitSync("Keybinds")
+end
+
+Redx.Performance = {}
+
+Redx.Performance.FPSBoost = function(s)
+	local b = s and true or false
+	Redx.State.Performance.fpsBoost = b
+	pcall(function()
+		settings().Rendering.QualityLevel = b and 1 or 10
+	end)
+	if b then
+		pcall(function()
+			Lighting.GlobalShadows = false
+		end)
+	end
+	emitSync("Performance.fpsBoost", b)
+	emitSync("Keybinds")
+end
+
+Redx.Performance.RemoveShadows = function(s)
+	local b = s and true or false
+	Redx.State.Performance.removeShadows = b
+	pcall(function()
+		Lighting.GlobalShadows = not b
+	end)
+	emitSync("Performance.removeShadows", b)
+end
+
+Redx.Performance.LowTextures = function(s)
+	local b = s and true or false
+	Redx.State.Performance.lowTextures = b
+	pcall(function()
+		settings().Rendering.QualityLevel = b and 1 or 10
+	end)
+	emitSync("Performance.lowTextures", b)
+end
+
+Redx.Bypass = {}
+
+Redx.Bypass.Stealth = function(s)
+	local b = s and true or false
+	Redx.State.Bypass.stealth = b
+	if b and ScreenGui then
+		pcall(function()
+			ScreenGui.Name = "UI_" .. tostring(math.random(100000, 999999))
+		end)
+	elseif ScreenGui then
+		pcall(function()
+			ScreenGui.Name = "RedxPainelGui"
+		end)
+	end
+	emitSync("Bypass.stealth", b)
+end
+
+Redx.Bypass.UnlockFPS = function(s)
+	local b = s and true or false
+	Redx.State.Bypass.unlockFPS = b
+	pcall(function()
+		if type(setfpscap) == "function" then
+			setfpscap(b and 240 or 60)
+		end
+	end)
+	emitSync("Bypass.unlockFPS", b)
 end
 
 local ResolvedLogoAsset = nil
@@ -535,125 +1908,25 @@ local function createIcon(parent, kind, sizePx, color)
 			Parent = box
 		})
 		addCorner(shoulders, 5)
-	elseif kind == "weapon" then
-		local barrel = create("Frame", {
-			Position = UDim2.fromScale(0.10, 0.24),
-			Size = UDim2.fromScale(0.80, 0.26),
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(barrel, 2)
-		local grip = create("Frame", {
-			Position = UDim2.fromScale(0.16, 0.44),
-			Size = UDim2.fromScale(0.26, 0.42),
-			Rotation = 14,
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(grip, 2)
-		create("Frame", {
-			Position = UDim2.fromScale(0.40, 0.48),
-			Size = UDim2.fromScale(0.18, 0.14),
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-	elseif kind == "world" then
-		local globe = create("Frame", {
+	elseif kind == "shield" then
+		local sh = create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.84, 0.84),
-			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(0.72, 0.84),
+			BackgroundColor3 = col,
+			BorderSizePixel = 0,
 			Parent = box
 		})
-		addCorner(globe, 99)
-		addStroke(globe, col, 1.3)
-		local meridian = create("Frame", {
+		addCorner(sh, 5)
+		local inner = create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.42, 0.84),
-			BackgroundTransparency = 1,
-			Parent = box
-		})
-		addCorner(meridian, 99)
-		addStroke(meridian, col, 1.1)
-		create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.82, 0.09),
-			BackgroundColor3 = col,
+			Size = UDim2.fromScale(0.38, 0.48),
+			BackgroundColor3 = Theme.CardBg,
 			BorderSizePixel = 0,
 			Parent = box
 		})
-	elseif kind == "jetpack" then
-		local body = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.88, 0.22),
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(body, 3)
-		local wing = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.52, 0.5),
-			Size = UDim2.fromScale(0.24, 0.88),
-			Rotation = 16,
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(wing, 2)
-		local tail = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.16, 0.5),
-			Size = UDim2.fromScale(0.16, 0.52),
-			Rotation = 14,
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(tail, 2)
-	elseif kind == "panic" then
-		local canopy = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.fromScale(0.5, 0.06),
-			Size = UDim2.fromScale(0.84, 0.42),
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(canopy, 99)
-		create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.34, 0.58),
-			Size = UDim2.new(0, 1.2, 0.34, 0),
-			Rotation = -18,
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.66, 0.58),
-			Size = UDim2.new(0, 1.2, 0.34, 0),
-			Rotation = 18,
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		local crate = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.fromScale(0.5, 0.94),
-			Size = UDim2.fromScale(0.32, 0.24),
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Parent = box
-		})
-		addCorner(crate, 2)
+		addCorner(inner, 3)
 	elseif kind == "clock" then
 		local circle = create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -686,275 +1959,112 @@ local function createIcon(parent, kind, sizePx, color)
 	return box
 end
 
-local Store = {
-	Toggles = {
-		KitRapido = true,
-		SaborTelaParada = false,
-		BackJump = false,
-		GhostHack = false,
-		AutoSuicide = false,
-		AutoRevive = true,
-		FirstPerson = false,
-		NoRecoil = true,
-		NoScope = false,
-		NoPreFireDelay = true,
-		FastSwitch = false,
-		UpsideDown = false,
-		KillCover = false,
-		TeleportWall = false,
-		CameraFOV = true,
-		FlyHack = true,
-		SpawnJet = false,
-		TeleportWayPoint = false,
-		TeleKill = true,
-		PanicAirPlaneToggle = true,
-		PanicAction = false,
-		AutoSpawnM249 = true,
-		AutoSpawnUMP = true,
-		AutoSpawnAwake = true,
-		AutoSpawnJetPack = true,
-		AimbotEnabled = false,
-		SilentAim = false,
-		AutoFire = false,
-		AimIgnoreKnocked = true,
-		AimVisibleCheck = true,
-		AimDrawLine = false,
-		SpawnAWM = false,
-		SpawnMedKit = false,
-		SpawnGlooWall = false,
-		SpawnVestLv4 = false,
-		FPSBoost = false,
-		RemoveShadows = false,
-		LowTextures = false,
-		CleanMemory = false,
-		PingStabilizer = false,
-		ESPEnabled = false,
-		ESPBox = false,
-		ESPSkeleton = false,
-		ESPLines = false,
-		ESPName = false,
-		ESPHealth = false,
-		ChamsGlow = false,
-		CollapseAllBars = false
-	},
-	Sliders = {
-		Angle = 180,
-		FOV = 235,
-		Height = -45,
-		Speed = 378,
-		Ignore = 300,
-		AimSmooth = 15,
-		AimDistance = 300,
-		AutoLootDist = 15,
-		FPSCap = 120,
-		RenderScale = 100,
-		ESPDistance = 250,
-		MainScale = 100,
-		FloatScale = 100
-	},
-	Keybinds = {
-		GhostHack = nil,
-		AutoSuicide = nil,
-		TeleportWayPoint = Enum.KeyCode.F3,
-		PanicAction = Enum.KeyCode.F2,
-		FlyHack = Enum.KeyCode.F5,
-		TeleKill = Enum.KeyCode.F6,
-		SpawnJet = Enum.KeyCode.F8,
-		KillCover = Enum.KeyCode.F9,
-		AimbotEnabled = nil,
-		MenuToggle = Enum.KeyCode.RightShift
-	},
-	KeybindLabels = {
-		TeleportWayPoint = "Teleport WayPoint",
-		PanicAction = "Panic AirPlane",
-		FlyHack = "Fly Hack",
-		TeleKill = "TeleKill",
-		SpawnJet = "Spawn Jet",
-		KillCover = "Kill Cover",
-		GhostHack = "Ghost Hack",
-		AutoSuicide = "Auto Suicide",
-		AimbotEnabled = "Aimbot"
-	},
-	KeybindOrder = {
-		"TeleportWayPoint",
-		"PanicAction",
-		"FlyHack",
-		"TeleKill",
-		"SpawnJet",
-		"KillCover",
-		"GhostHack",
-		"AutoSuicide",
-		"AimbotEnabled"
-	},
+local UIState = {
 	Windows = {
-		PanicWindow = true,
-		JetPackWindow = true,
-		PlayerWindow = false,
-		WeaponWindow = false,
-		WorldWindow = false,
-		AimbotWindow = false,
-		VisualsWindow = false,
+		AimWindow = true,
+		ESPWindow = true,
+		ESPAdvWindow = false,
+		GodmodeWindow = false,
+		PerfWindow = false,
+		BypassWindow = false,
 		KeybindOverlay = true,
 		TimerPill = true,
-		SpectatorPill = true,
-		FOVCircle = true
+		PlayerCountPill = true
 	},
 	SidebarTabsEnabled = {
 		Aimbot = true,
-		Exploits = true,
-		SpawnItens = true,
-		Otimizacao = true,
 		Visuals = true,
+		ESPConfig = true,
+		Player = true,
+		Performance = true,
 		Personalizacao = true,
-		Configuracoes = true
+		Config = true
 	},
-	ToggleListeners = {},
-	SliderListeners = {},
-	KeybindListeners = {},
-	WindowListeners = {},
-	SidebarTabListeners = {}
+	Keybinds = {
+		AimMagnet = Enum.KeyCode.F2,
+		FOVToggle = Enum.KeyCode.F3,
+		ESPEnable = Enum.KeyCode.F5,
+		ChamsToggle = Enum.KeyCode.F6,
+		GodmodeToggle = Enum.KeyCode.F8,
+		FPSBoostToggle = Enum.KeyCode.F9,
+		MenuToggle = Enum.KeyCode.RightShift
+	},
+	KeybindMeta = {
+		{
+			Id = "AimMagnet",
+			Label = "Aim Magnet",
+			Get = function()
+				return Redx.State.Aimbot.enabled
+			end,
+			Toggle = function()
+				Redx.Aimbot.Toggle(not Redx.State.Aimbot.enabled)
+			end
+		},
+		{
+			Id = "FOVToggle",
+			Label = "Mostrar FOV",
+			Get = function()
+				return Redx.State.FOV.enabled
+			end,
+			Toggle = function()
+				Redx.FOV.Toggle(not Redx.State.FOV.enabled)
+			end
+		},
+		{
+			Id = "ESPEnable",
+			Label = "Ativar ESP",
+			Get = function()
+				return Redx.State.ESP.enabled
+			end,
+			Toggle = function()
+				Redx.ESP.Toggle(not Redx.State.ESP.enabled)
+			end
+		},
+		{
+			Id = "ChamsToggle",
+			Label = "Chams (glow 3D)",
+			Get = function()
+				return Redx.State.ESP.chams
+			end,
+			Toggle = function()
+				Redx.ESP.SetElement("chams", not Redx.State.ESP.chams)
+			end
+		},
+		{
+			Id = "GodmodeToggle",
+			Label = "Godmode",
+			Get = function()
+				return Redx.State.Godmode.enabled
+			end,
+			Toggle = function()
+				Redx.Godmode.Toggle(not Redx.State.Godmode.enabled)
+			end
+		},
+		{
+			Id = "FPSBoostToggle",
+			Label = "FPS Boost",
+			Get = function()
+				return Redx.State.Performance.fpsBoost
+			end,
+			Toggle = function()
+				Redx.Performance.FPSBoost(not Redx.State.Performance.fpsBoost)
+			end
+		}
+	},
+	MainScalePct = 100,
+	FloatScalePct = 100
 }
 
-local function onToggleChanged(id, fn)
-	if not Store.ToggleListeners[id] then
-		Store.ToggleListeners[id] = {}
-	end
-	table.insert(Store.ToggleListeners[id], fn)
-end
-
-local function onSliderChanged(id, fn)
-	if not Store.SliderListeners[id] then
-		Store.SliderListeners[id] = {}
-	end
-	table.insert(Store.SliderListeners[id], fn)
-end
-
-local function onKeybindChanged(fn)
-	table.insert(Store.KeybindListeners, fn)
-end
-
-local function onWindowChanged(id, fn)
-	if not Store.WindowListeners[id] then
-		Store.WindowListeners[id] = {}
-	end
-	table.insert(Store.WindowListeners[id], fn)
-end
-
-local function onSidebarTabChanged(id, fn)
-	if not Store.SidebarTabListeners[id] then
-		Store.SidebarTabListeners[id] = {}
-	end
-	table.insert(Store.SidebarTabListeners[id], fn)
-end
-
-local function notifyKeybinds()
-	for i = 1, #Store.KeybindListeners do
-		pcall(Store.KeybindListeners[i])
-	end
-end
-
-local DefaultCameraFOV = 70
-pcall(function()
-	if workspace.CurrentCamera then
-		DefaultCameraFOV = workspace.CurrentCamera.FieldOfView
-	end
-end)
-
-local ESPHighlights = {}
-local function updatePlayerESP(enabled)
-	if not enabled then
-		for plr, hl in pairs(ESPHighlights) do
-			pcall(function()
-				hl:Destroy()
-			end)
-			ESPHighlights[plr] = nil
-		end
-		return
-	end
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and plr.Character then
-			if not ESPHighlights[plr] or not ESPHighlights[plr].Parent then
-				pcall(function()
-					local hl = Instance.new("Highlight")
-					hl.FillColor = Theme.Accent
-					hl.OutlineColor = Theme.White
-					hl.FillTransparency = 0.65
-					hl.OutlineTransparency = 0.1
-					hl.Adornee = plr.Character
-					hl.Parent = plr.Character
-					ESPHighlights[plr] = hl
-				end)
-			end
-		end
-	end
-end
-
-local function setWindowActive(winId, state)
+local function setWindowActive(winKey, state)
 	local b = state and true or false
-	Store.Windows[winId] = b
-	local list = Store.WindowListeners[winId]
-	if list then
-		for i = 1, #list do
-			pcall(list[i], b)
-		end
-	end
+	UIState.Windows[winKey] = b
+	emitSync("Window." .. winKey, b)
 end
 
 local function setSidebarTabEnabled(tabId, state)
 	local b = state and true or false
-	Store.SidebarTabsEnabled[tabId] = b
-	local list = Store.SidebarTabListeners[tabId]
-	if list then
-		for i = 1, #list do
-			pcall(list[i], b)
-		end
-	end
-end
-
-local function setToggle(id, state)
-	local b = state and true or false
-	Store.Toggles[id] = b
-	local list = Store.ToggleListeners[id]
-	if list then
-		for i = 1, #list do
-			pcall(list[i], b)
-		end
-	end
-	if Store.KeybindLabels[id] then
-		notifyKeybinds()
-	end
-	if id == "FirstPerson" and LocalPlayer then
-		pcall(function()
-			LocalPlayer.CameraMode = b and Enum.CameraMode.LockFirstPerson or Enum.CameraMode.Classic
-		end)
-	elseif id == "RemoveShadows" then
-		pcall(function()
-			Lighting.GlobalShadows = not b
-		end)
-	elseif id == "ESPEnabled" or id == "ChamsGlow" then
-		updatePlayerESP(Store.Toggles.ESPEnabled or Store.Toggles.ChamsGlow)
-	elseif id == "CameraFOV" then
-		setWindowActive("FOVCircle", b)
-		if not b then
-			pcall(function()
-				if workspace.CurrentCamera then
-					workspace.CurrentCamera.FieldOfView = DefaultCameraFOV
-				end
-			end)
-		end
-	elseif id == "PanicAirPlaneToggle" then
-		setWindowActive("PanicWindow", b)
-	end
-end
-
-local function setSlider(id, value)
-	Store.Sliders[id] = value
-	local list = Store.SliderListeners[id]
-	if list then
-		for i = 1, #list do
-			pcall(list[i], value)
-		end
-	end
+	UIState.SidebarTabsEnabled[tabId] = b
+	emitSync("SidebarTab." .. tabId, b)
 end
 
 local function formatKeyCode(kc)
@@ -975,52 +2085,13 @@ local function formatKeyCode(kc)
 	return shortMap[name] or name
 end
 
-local function setKeybind(id, keyCode)
-	Store.Keybinds[id] = keyCode
-	notifyKeybinds()
-end
-
-local GuiParent = nil
-pcall(function()
-	if type(gethui) == "function" then
-		GuiParent = gethui()
-	end
-end)
-if not GuiParent then
-	pcall(function()
-		GuiParent = game:GetService("CoreGui")
-	end)
-end
-if not GuiParent and LocalPlayer then
-	pcall(function()
-		GuiParent = LocalPlayer:WaitForChild("PlayerGui", 3)
-	end)
-end
-
-local ScreenGui = create("ScreenGui", {
-	Name = "RedxPainelGui",
-	ResetOnSpawn = false,
-	IgnoreGuiInset = true,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-})
-
-pcall(function()
-	if syn and type(syn.protect_gui) == "function" and GuiParent == game:GetService("CoreGui") then
-		syn.protect_gui(ScreenGui)
-	end
-end)
-
-if GuiParent then
-	ScreenGui.Parent = GuiParent
-end
-
 local ViewportSize = Vector2.new(1366, 768)
 pcall(function()
 	if workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X > 0 then
 		ViewportSize = workspace.CurrentCamera.ViewportSize
 	end
 end)
-local InitialGlobalScale = clampNum(math.min(ViewportSize.X / 1320, ViewportSize.Y / 720), 0.56, 1.0)
+local InitialGlobalScale = clamp(math.min(ViewportSize.X / 1320, ViewportSize.Y / 720), 0.56, 1.0)
 
 local ActivePointerAction = nil
 local BindingTargetId = nil
@@ -1084,35 +2155,6 @@ local function registerCollapsible(entry)
 	table.insert(AllCollapsibleEntries, entry)
 end
 
-local FOVFrame = create("Frame", {
-	Name = "FOVCircle",
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(0, Store.Sliders.FOV * 2, 0, Store.Sliders.FOV * 2),
-	BackgroundTransparency = 1,
-	Visible = Store.Windows.FOVCircle,
-	ZIndex = 1,
-	Parent = ScreenGui
-})
-addCorner(FOVFrame, 9999)
-local FOVStroke = addStroke(FOVFrame, Color3.fromRGB(244, 244, 246), 1.2, 0.08)
-
-onSliderChanged("FOV", function(val)
-	local d = math.floor(val * 2)
-	FOVFrame.Size = UDim2.new(0, d, 0, d)
-	if Store.Toggles.CameraFOV then
-		pcall(function()
-			if workspace.CurrentCamera then
-				workspace.CurrentCamera.FieldOfView = clampNum(50 + (val / 450) * 65, 50, 120)
-			end
-		end)
-	end
-end)
-
-onWindowChanged("FOVCircle", function(vis)
-	FOVFrame.Visible = vis
-end)
-
 local function createHudPill(name, posUDim, widthPx, iconKind, defaultText, winKey)
 	local pill = create("Frame", {
 		Name = name,
@@ -1122,7 +2164,7 @@ local function createHudPill(name, posUDim, widthPx, iconKind, defaultText, winK
 		BackgroundColor3 = Theme.BadgeBg,
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
-		Visible = Store.Windows[winKey],
+		Visible = UIState.Windows[winKey],
 		ZIndex = 20,
 		Parent = ScreenGui
 	})
@@ -1171,20 +2213,17 @@ local function createHudPill(name, posUDim, widthPx, iconKind, defaultText, winK
 	end)
 
 	attachDraggable(pill, pill)
+	registerCollapsible({ setCollapsed = setCollapsedState })
 
-	registerCollapsible({
-		setCollapsed = setCollapsedState
-	})
-
-	onWindowChanged(winKey, function(vis)
+	onSync("Window." .. winKey, function(vis)
 		pill.Visible = vis
 	end)
 
 	return pill, label, pillScale
 end
 
-local TimerPill, TimerLabel = createHudPill("TimerPill", UDim2.new(0.46, 0, 0.115, 0), 74, "clock", "00:00", "TimerPill")
-local SpecPill, SpecLabel = createHudPill("SpectatorPill", UDim2.new(0.498, 0, 0.18, 0), 52, "player", "0", "SpectatorPill")
+local _, TimerLabel = createHudPill("TimerPill", UDim2.new(0.46, 0, 0.115, 0), 74, "clock", "00:00", "TimerPill")
+local _, PlayerCountLabel = createHudPill("PlayerCountPill", UDim2.new(0.498, 0, 0.18, 0), 52, "player", "0", "PlayerCountPill")
 
 local StartClock = os.clock and os.clock() or 0
 spawnTask(function()
@@ -1198,12 +2237,12 @@ spawnTask(function()
 		local mins = math.floor(elapsed / 60)
 		local secs = elapsed % 60
 		TimerLabel.Text = string.format("%02d:%02d", mins, secs)
-		local otherCount = math.max(0, #Players:GetPlayers() - 1)
-		SpecLabel.Text = tostring(otherCount > 0 and 0 or 0)
+		local others = math.max(0, #Players:GetPlayers() - 1)
+		PlayerCountLabel.Text = tostring(others)
 	end
 end)
 
-local function buildToggleRow(parent, labelText, toggleId)
+local function buildToggleControl(parent, labelText, getter, setter, syncChannel)
 	local row = create("Frame", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 24),
@@ -1231,11 +2270,12 @@ local function buildToggleRow(parent, labelText, toggleId)
 		Parent = row
 	})
 
+	local init = getter() and true or false
 	local switchBg = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
 		Size = UDim2.new(0, 32, 0, 16),
-		BackgroundColor3 = Store.Toggles[toggleId] and Theme.Accent or Theme.ToggleOff,
+		BackgroundColor3 = init and Theme.Accent or Theme.ToggleOff,
 		BorderSizePixel = 0,
 		Parent = row
 	})
@@ -1243,7 +2283,7 @@ local function buildToggleRow(parent, labelText, toggleId)
 
 	local knob = create("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
-		Position = Store.Toggles[toggleId] and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
+		Position = init and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
 		Size = UDim2.new(0, 12, 0, 12),
 		BackgroundColor3 = Theme.White,
 		BorderSizePixel = 0,
@@ -1251,101 +2291,54 @@ local function buildToggleRow(parent, labelText, toggleId)
 	})
 	addCorner(knob, 999)
 
-	local function refreshVisual(val)
-		tween(switchBg, 0.14, {
-			BackgroundColor3 = val and Theme.Accent or Theme.ToggleOff
-		})
-		tween(knob, 0.14, {
-			Position = val and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		})
+	local function refresh(val)
+		local b = val and true or false
+		tween(switchBg, 0.14, { BackgroundColor3 = b and Theme.Accent or Theme.ToggleOff })
+		tween(knob, 0.14, { Position = b and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0) })
 	end
 
 	btnRow.MouseButton1Click:Connect(function()
-		setToggle(toggleId, not Store.Toggles[toggleId])
+		local nextVal = not getter()
+		setter(nextVal)
+		refresh(getter())
 	end)
 
-	onToggleChanged(toggleId, refreshVisual)
+	if syncChannel then
+		onSync(syncChannel, refresh)
+	end
+
 	return row
 end
 
 local function buildWindowToggleRow(parent, labelText, winKey)
-	local row = create("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 24),
-		Parent = parent
-	})
-
-	local btnRow = create("TextButton", {
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		AutoButtonColor = false,
-		Parent = row
-	})
-
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 0),
-		Size = UDim2.new(1, -40, 1, 0),
-		Font = Enum.Font.GothamMedium,
-		Text = labelText,
-		TextColor3 = Theme.TextSecondary,
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Parent = row
-	})
-
-	local switchBg = create("Frame", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.new(0, 32, 0, 16),
-		BackgroundColor3 = Store.Windows[winKey] and Theme.Accent or Theme.ToggleOff,
-		BorderSizePixel = 0,
-		Parent = row
-	})
-	addCorner(switchBg, 999)
-
-	local knob = create("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = Store.Windows[winKey] and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-		Size = UDim2.new(0, 12, 0, 12),
-		BackgroundColor3 = Theme.White,
-		BorderSizePixel = 0,
-		Parent = switchBg
-	})
-	addCorner(knob, 999)
-
-	btnRow.MouseButton1Click:Connect(function()
-		setWindowActive(winKey, not Store.Windows[winKey])
-	end)
-
-	onWindowChanged(winKey, function(val)
-		tween(switchBg, 0.14, {
-			BackgroundColor3 = val and Theme.Accent or Theme.ToggleOff
-		})
-		tween(knob, 0.14, {
-			Position = val and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		})
-	end)
-
-	return row
+	return buildToggleControl(
+		parent,
+		labelText,
+		function()
+			return UIState.Windows[winKey]
+		end,
+		function(v)
+			setWindowActive(winKey, v)
+		end,
+		"Window." .. winKey
+	)
 end
 
-local function buildKeybindRow(parent, labelText, keybindId)
+local function buildKeybindControl(parent, labelText, keyId, activeGetter, activeToggler)
 	local row = create("Frame", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 24),
 		Parent = parent
 	})
 
+	local isOn = activeGetter and activeGetter() or false
 	local labelBtn = create("TextButton", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 0, 0, 0),
 		Size = UDim2.new(1, -56, 1, 0),
 		Font = Enum.Font.GothamMedium,
 		Text = labelText,
-		TextColor3 = Store.Toggles[keybindId] and Theme.Accent or Theme.TextSecondary,
+		TextColor3 = isOn and Theme.Accent or Theme.TextSecondary,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		AutoButtonColor = false,
@@ -1359,62 +2352,59 @@ local function buildKeybindRow(parent, labelText, keybindId)
 		BackgroundColor3 = Theme.BadgeBg,
 		BorderSizePixel = 0,
 		Font = Enum.Font.GothamMedium,
-		Text = formatKeyCode(Store.Keybinds[keybindId]),
+		Text = formatKeyCode(UIState.Keybinds[keyId]),
 		TextColor3 = Theme.TextPrimary,
 		TextSize = 10,
 		AutoButtonColor = false,
 		Parent = row
 	})
 	addCorner(keyBtn, 4)
-	local stroke = addStroke(keyBtn, Theme.BadgeStroke, 1)
+	local st = addStroke(keyBtn, Theme.BadgeStroke, 1)
 
 	labelBtn.MouseButton1Click:Connect(function()
-		if Store.Toggles[keybindId] ~= nil then
-			setToggle(keybindId, not Store.Toggles[keybindId])
+		if activeToggler then
+			activeToggler()
 		end
 	end)
 
-	if Store.Toggles[keybindId] ~= nil then
-		onToggleChanged(keybindId, function(active)
-			labelBtn.TextColor3 = active and Theme.Accent or Theme.TextSecondary
-		end)
-	end
-
 	keyBtn.MouseButton1Click:Connect(function()
-		if BindingTargetId == keybindId then
+		if BindingTargetId == keyId then
 			BindingTargetId = nil
-			notifyKeybinds()
+			emitSync("Keybinds")
 			return
 		end
 		local prev = BindingTargetId
-		BindingTargetId = keybindId
+		BindingTargetId = keyId
 		if prev ~= nil then
-			notifyKeybinds()
+			emitSync("Keybinds")
 		end
 		keyBtn.Text = "..."
 		keyBtn.TextColor3 = Theme.Accent
-		stroke.Color = Theme.Accent
+		st.Color = Theme.Accent
 	end)
 
-	onKeybindChanged(function()
-		if BindingTargetId ~= keybindId then
-			keyBtn.Text = formatKeyCode(Store.Keybinds[keybindId])
+	onSync("Keybinds", function()
+		if activeGetter then
+			labelBtn.TextColor3 = activeGetter() and Theme.Accent or Theme.TextSecondary
+		end
+		if BindingTargetId ~= keyId then
+			keyBtn.Text = formatKeyCode(UIState.Keybinds[keyId])
 			keyBtn.TextColor3 = Theme.TextPrimary
-			stroke.Color = Theme.BadgeStroke
+			st.Color = Theme.BadgeStroke
 		end
 	end)
 
 	return row
 end
 
-local function buildSliderRow(parent, labelText, sliderId, minVal, maxVal, unitSuffix, showBadge)
+local function buildSliderControl(parent, labelText, getter, setter, minVal, maxVal, suffix, syncChannel)
 	local row = create("Frame", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 24),
 		Parent = parent
 	})
 
-	local labelWidth = 52
+	local labelWidth = 64
 	create("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 0, 0, 0),
@@ -1422,17 +2412,17 @@ local function buildSliderRow(parent, labelText, sliderId, minVal, maxVal, unitS
 		Font = Enum.Font.GothamMedium,
 		Text = labelText,
 		TextColor3 = Theme.TextSecondary,
-		TextSize = 11,
+		TextSize = 10.5,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = row
 	})
 
-	local rightReserve = showBadge and 52 or 2
+	local badgeReserve = 50
 	local hitArea = create("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, labelWidth + 4, 0, 0),
-		Size = UDim2.new(1, -(labelWidth + 4 + rightReserve), 1, 0),
+		Size = UDim2.new(1, -(labelWidth + 4 + badgeReserve), 1, 0),
 		Parent = row
 	})
 
@@ -1446,8 +2436,8 @@ local function buildSliderRow(parent, labelText, sliderId, minVal, maxVal, unitS
 	})
 	addCorner(track, 999)
 
-	local curVal = Store.Sliders[sliderId] or minVal
-	local initAlpha = clampNum((curVal - minVal) / math.max(1, (maxVal - minVal)), 0, 1)
+	local curVal = getter() or minVal
+	local initAlpha = clamp((curVal - minVal) / math.max(1, (maxVal - minVal)), 0, 1)
 
 	local fill = create("Frame", {
 		Size = UDim2.new(initAlpha, 0, 1, 0),
@@ -1468,45 +2458,47 @@ local function buildSliderRow(parent, labelText, sliderId, minVal, maxVal, unitS
 	})
 	addCorner(thumb, 3)
 
-	local badgeLabel = nil
-	if showBadge then
-		local badge = create("Frame", {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, 0, 0.5, 0),
-			Size = UDim2.new(0, 46, 0, 18),
-			BackgroundColor3 = Theme.BadgeBg,
-			BorderSizePixel = 0,
-			Parent = row
-		})
-		addCorner(badge, 4)
-		addStroke(badge, Theme.BadgeStroke, 1)
-		badgeLabel = create("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			Font = Enum.Font.GothamMedium,
-			Text = tostring(curVal) .. (unitSuffix or ""),
-			TextColor3 = Theme.Accent,
-			TextSize = 9.5,
-			Parent = badge
-		})
+	local badge = create("Frame", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(0, 46, 0, 18),
+		BackgroundColor3 = Theme.BadgeBg,
+		BorderSizePixel = 0,
+		Parent = row
+	})
+	addCorner(badge, 4)
+	addStroke(badge, Theme.BadgeStroke, 1)
+
+	local badgeLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Font = Enum.Font.GothamMedium,
+		Text = tostring(curVal) .. (suffix or ""),
+		TextColor3 = Theme.Accent,
+		TextSize = 9.5,
+		Parent = badge
+	})
+
+	local function refreshVisual(val)
+		local v = val or getter() or minVal
+		local a = clamp((v - minVal) / math.max(1, (maxVal - minVal)), 0, 1)
+		fill.Size = UDim2.new(a, 0, 1, 0)
+		thumb.Position = UDim2.new(a, 0, 0.5, 0)
+		badgeLabel.Text = tostring(v) .. (suffix or "")
 	end
 
 	local function updateFromPositionX(screenX)
 		local absPos = track.AbsolutePosition.X
 		local absWidth = math.max(1, track.AbsoluteSize.X)
-		local alpha = clampNum((screenX - absPos) / absWidth, 0, 1)
+		local alpha = clamp((screenX - absPos) / absWidth, 0, 1)
 		local stepped = math.floor(minVal + alpha * (maxVal - minVal) + 0.5)
-		setSlider(sliderId, stepped)
+		setter(stepped)
+		refreshVisual(getter())
 	end
 
-	onSliderChanged(sliderId, function(v)
-		local a = clampNum((v - minVal) / math.max(1, (maxVal - minVal)), 0, 1)
-		fill.Size = UDim2.new(a, 0, 1, 0)
-		thumb.Position = UDim2.new(a, 0, 0.5, 0)
-		if badgeLabel then
-			badgeLabel.Text = tostring(v) .. (unitSuffix or "")
-		end
-	end)
+	if syncChannel then
+		onSync(syncChannel, refreshVisual)
+	end
 
 	local sliding = false
 	local slideInput = nil
@@ -1542,6 +2534,170 @@ local function buildSliderRow(parent, labelText, sliderId, minVal, maxVal, unitS
 	return row
 end
 
+local function buildSegmentedSelector(parent, labelText, getter, onPick, options, syncChannel)
+	local hasLabel = (labelText ~= nil and labelText ~= "")
+	local row = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, hasLabel and 42 or 24),
+		Parent = parent
+	})
+
+	if hasLabel then
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 14),
+			Font = Enum.Font.GothamMedium,
+			Text = labelText,
+			TextColor3 = Theme.TextSecondary,
+			TextSize = 10.5,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = row
+		})
+	end
+
+	local box = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, hasLabel and 17 or 0),
+		Size = UDim2.new(1, 0, 0, 23),
+		Parent = row
+	})
+
+	local btns = {}
+	local n = #options
+	for i = 1, n do
+		local opt = options[i]
+		local b = create("TextButton", {
+			BackgroundColor3 = (getter() == opt.tag) and Theme.Accent or Theme.BadgeBg,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1 / n, -3, 1, 0),
+			Position = UDim2.new((i - 1) / n, (i == 1) and 0 or 2, 0, 0),
+			Font = Enum.Font.GothamBold,
+			Text = opt.label,
+			TextColor3 = Theme.White,
+			TextSize = 9.5,
+			AutoButtonColor = false,
+			Parent = box
+		})
+		addCorner(b, 4)
+		addStroke(b, Theme.CategoryStroke, 1)
+		btns[opt.tag] = b
+
+		b.MouseButton1Click:Connect(function()
+			onPick(opt.tag)
+		end)
+	end
+
+	local function refresh()
+		local current = getter()
+		for tag, btn in pairs(btns) do
+			btn.BackgroundColor3 = (tag == current) and Theme.Accent or Theme.BadgeBg
+		end
+	end
+
+	if syncChannel then
+		onSync(syncChannel, refresh)
+	end
+
+	return row
+end
+
+local function buildPaletteControl(parent, onPick)
+	local wrap = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 68),
+		Parent = parent
+	})
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Enum.Font.GothamBold,
+		Text = "Cor do ESP",
+		TextColor3 = Theme.Accent,
+		TextSize = 10.5,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = wrap
+	})
+
+	local palette = {
+		Color3.fromRGB(230, 0, 28),
+		Color3.fromRGB(255, 80, 80),
+		Color3.fromRGB(255, 140, 0),
+		Color3.fromRGB(255, 220, 0),
+		Color3.fromRGB(100, 255, 100),
+		Color3.fromRGB(0, 220, 220),
+		Color3.fromRGB(0, 140, 255),
+		Color3.fromRGB(180, 60, 255),
+		Color3.fromRGB(255, 60, 200),
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(120, 120, 120),
+		Color3.fromRGB(0, 0, 0)
+	}
+
+	local gridBox = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 18),
+		Size = UDim2.new(1, 0, 0, 48),
+		Parent = wrap
+	})
+
+	local strokes = {}
+	for i = 1, #palette do
+		local col = palette[i]
+		local colIdx = (i - 1) % 6
+		local rowIdx = math.floor((i - 1) / 6)
+		local sw = create("TextButton", {
+			BackgroundColor3 = col,
+			BorderSizePixel = 0,
+			Position = UDim2.new(colIdx / 6, 1, 0, rowIdx * 24),
+			Size = UDim2.new(1 / 6, -4, 0, 20),
+			Text = "",
+			AutoButtonColor = false,
+			Parent = gridBox
+		})
+		addCorner(sw, 4)
+		local st = addStroke(sw, Theme.CardStroke, 1.2)
+		strokes[i] = { col = col, stroke = st }
+
+		sw.MouseButton1Click:Connect(function()
+			onPick(col)
+		end)
+	end
+
+	local function refreshSelected()
+		local cur = Redx.State.ESP.color
+		for i = 1, #strokes do
+			local item = strokes[i]
+			local same = (item.col == cur)
+			item.stroke.Color = same and Theme.White or Theme.CardStroke
+			item.stroke.Thickness = same and 2 or 1.2
+		end
+	end
+
+	refreshSelected()
+	onSync("ESP.color", refreshSelected)
+
+	return wrap
+end
+
+local function buildActionButton(parent, labelText, onClick, isAccent)
+	local btn = create("TextButton", {
+		BackgroundColor3 = isAccent and Theme.Accent or Theme.CategoryBg,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 25),
+		Font = Enum.Font.GothamBold,
+		Text = labelText,
+		TextColor3 = isAccent and Theme.White or Theme.Accent,
+		TextSize = 10.5,
+		AutoButtonColor = false,
+		Parent = parent
+	})
+	addCorner(btn, 5)
+	addStroke(btn, isAccent and Theme.AccentHover or Theme.CategoryStroke, 1)
+	btn.MouseButton1Click:Connect(onClick)
+	return btn
+end
+
 local function attachResizeAndPullBar(windowFrame, scaleObj, baseWidth, baseHeight, minBarHeight, onBarCollapseChanged)
 	local grip = create("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
@@ -1562,7 +2718,7 @@ local function attachResizeAndPullBar(windowFrame, scaleObj, baseWidth, baseHeig
 		ZIndex = 51,
 		Parent = grip
 	})
-	local line2 = create("Frame", {
+	create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(1, -4, 1, -4),
 		Size = UDim2.new(0, 5, 0, 1.5),
@@ -1622,7 +2778,7 @@ local function attachResizeAndPullBar(windowFrame, scaleObj, baseWidth, baseHeig
 		local delta = input.Position - startMouse
 		if resizeMode == "corner" then
 			local scaleDelta = ((delta.X / baseWidth) + (delta.Y / baseHeight)) * 0.5
-			local nextScale = clampNum(startScale + scaleDelta, 0.38, 1.55)
+			local nextScale = clamp(startScale + scaleDelta, 0.38, 1.55)
 			scaleObj.Scale = nextScale
 			local rawVertical = startHeight + (delta.Y / math.max(0.4, nextScale))
 			if rawVertical <= minBarHeight + 16 then
@@ -1631,7 +2787,7 @@ local function attachResizeAndPullBar(windowFrame, scaleObj, baseWidth, baseHeig
 				end
 			else
 				if onBarCollapseChanged then
-					onBarCollapseChanged(false, clampNum(rawVertical, minBarHeight + 60, baseHeight + 220))
+					onBarCollapseChanged(false, clamp(rawVertical, minBarHeight + 60, baseHeight + 220))
 				end
 			end
 		elseif resizeMode == "bottom" then
@@ -1642,7 +2798,7 @@ local function attachResizeAndPullBar(windowFrame, scaleObj, baseWidth, baseHeig
 				end
 			else
 				if onBarCollapseChanged then
-					onBarCollapseChanged(false, clampNum(rawH, minBarHeight + 55, baseHeight + 220))
+					onBarCollapseChanged(false, clamp(rawH, minBarHeight + 55, baseHeight + 220))
 				end
 			end
 		end
@@ -1664,86 +2820,453 @@ local function attachResizeAndPullBar(windowFrame, scaleObj, baseWidth, baseHeig
 end
 
 local SectionBuilders = {
-	Player = function(container)
-		buildToggleRow(container, "Kit rapido", "KitRapido")
-		buildToggleRow(container, "Sabor Tela Parada", "SaborTelaParada")
-		buildToggleRow(container, "Back Jump", "BackJump")
-		buildKeybindRow(container, "Ghost Hack", "GhostHack")
-		buildKeybindRow(container, "Auto Suicide", "AutoSuicide")
-		buildToggleRow(container, "Auto Revive", "AutoRevive")
-		buildToggleRow(container, "First Person", "FirstPerson")
+	AimMagnet = function(c)
+		buildToggleControl(
+			c,
+			"Ativar Aim Magnet",
+			function()
+				return Redx.State.Aimbot.enabled
+			end,
+			function(v)
+				Redx.Aimbot.Toggle(v)
+			end,
+			"Aimbot.enabled"
+		)
+		buildSegmentedSelector(
+			c,
+			"Alvo",
+			function()
+				return Redx.State.Aimbot.target
+			end,
+			function(t)
+				Redx.Aimbot.SetTarget(t)
+			end,
+			{
+				{ tag = "torso", label = "Tronco" },
+				{ tag = "head", label = "Cabeça" }
+			},
+			"Aimbot.target"
+		)
+		buildToggleControl(
+			c,
+			"Linha do Aim",
+			function()
+				return Redx.State.Aimbot.drawAimLine
+			end,
+			function(v)
+				Redx.Aimbot.SetDrawLine(v)
+			end,
+			"Aimbot.drawAimLine"
+		)
+		buildSliderControl(
+			c,
+			"Smooth",
+			function()
+				return Redx.State.Aimbot.smooth
+			end,
+			function(v)
+				Redx.Aimbot.SetSmooth(v)
+			end,
+			1,
+			100,
+			"%",
+			"Aimbot.smooth"
+		)
+		buildSliderControl(
+			c,
+			"FOV radius",
+			function()
+				return Redx.State.Aimbot.radius
+			end,
+			function(v)
+				Redx.Aimbot.SetRadius(v)
+				Redx.FOV.SetRadius(v)
+			end,
+			40,
+			450,
+			" px",
+			"Aimbot.radius"
+		)
+		buildKeybindControl(
+			c,
+			"Tecla Aim Magnet",
+			"AimMagnet",
+			function()
+				return Redx.State.Aimbot.enabled
+			end,
+			function()
+				Redx.Aimbot.Toggle(not Redx.State.Aimbot.enabled)
+			end
+		)
 	end,
-	Weapon = function(container)
-		buildToggleRow(container, "No Recoil", "NoRecoil")
-		buildToggleRow(container, "No Scope", "NoScope")
-		buildToggleRow(container, "No Pre-Fire Delay", "NoPreFireDelay")
-		buildToggleRow(container, "Fast Switch", "FastSwitch")
+
+	FOVCard = function(c)
+		buildToggleControl(
+			c,
+			"Mostrar FOV",
+			function()
+				return Redx.State.FOV.enabled
+			end,
+			function(v)
+				Redx.FOV.Toggle(v)
+			end,
+			"FOV.enabled"
+		)
+		buildSliderControl(
+			c,
+			"Tamanho",
+			function()
+				return Redx.State.FOV.radius
+			end,
+			function(v)
+				Redx.FOV.SetRadius(v)
+				Redx.Aimbot.SetRadius(v)
+			end,
+			40,
+			450,
+			" px",
+			"FOV.radius"
+		)
+		buildKeybindControl(
+			c,
+			"Tecla Mostrar FOV",
+			"FOVToggle",
+			function()
+				return Redx.State.FOV.enabled
+			end,
+			function()
+				Redx.FOV.Toggle(not Redx.State.FOV.enabled)
+			end
+		)
 	end,
-	World = function(container)
-		buildToggleRow(container, "Upside Down", "UpsideDown")
-		buildKeybindRow(container, "Kill Cover", "KillCover")
-		buildSliderRow(container, "Angle", "Angle", 0, 180, "°", false)
-		buildToggleRow(container, "Teleport Wall", "TeleportWall")
-		buildToggleRow(container, "Camera FOV", "CameraFOV")
-		buildSliderRow(container, "FOV", "FOV", 40, 450, "", false)
+
+	ESPMain = function(c)
+		buildToggleControl(
+			c,
+			"Ativar ESP",
+			function()
+				return Redx.State.ESP.enabled
+			end,
+			function(v)
+				Redx.ESP.Toggle(v)
+			end,
+			"ESP.enabled"
+		)
+		buildKeybindControl(
+			c,
+			"Tecla ESP",
+			"ESPEnable",
+			function()
+				return Redx.State.ESP.enabled
+			end,
+			function()
+				Redx.ESP.Toggle(not Redx.State.ESP.enabled)
+			end
+		)
+		buildToggleControl(
+			c,
+			"Caixa",
+			function()
+				return Redx.State.ESP.box
+			end,
+			function(v)
+				Redx.ESP.SetElement("box", v)
+			end,
+			"ESP.box"
+		)
+		buildSegmentedSelector(
+			c,
+			"Estilo da caixa",
+			function()
+				return Redx.State.ESP.boxStyle
+			end,
+			function(t)
+				Redx.ESP.SetBoxStyle(t)
+			end,
+			{
+				{ tag = "normal", label = "Normal" },
+				{ tag = "corner", label = "Cantos" },
+				{ tag = "filled", label = "Preench." }
+			},
+			"ESP.boxStyle"
+		)
+		buildToggleControl(
+			c,
+			"Nome + distância",
+			function()
+				return Redx.State.ESP.name
+			end,
+			function(v)
+				Redx.ESP.SetElement("name", v)
+			end,
+			"ESP.name"
+		)
+		buildToggleControl(
+			c,
+			"Vida (barra)",
+			function()
+				return Redx.State.ESP.healthBar
+			end,
+			function(v)
+				Redx.ESP.SetElement("healthBar", v)
+			end,
+			"ESP.healthBar"
+		)
+		buildToggleControl(
+			c,
+			"Vida (texto)",
+			function()
+				return Redx.State.ESP.healthText
+			end,
+			function(v)
+				Redx.ESP.SetElement("healthText", v)
+			end,
+			"ESP.healthText"
+		)
+		buildToggleControl(
+			c,
+			"Bolinha na cabeça",
+			function()
+				return Redx.State.ESP.headDot
+			end,
+			function(v)
+				Redx.ESP.SetElement("headDot", v)
+			end,
+			"ESP.headDot"
+		)
 	end,
-	JetPack = function(container)
-		buildKeybindRow(container, "Fly Hack", "FlyHack")
-		buildKeybindRow(container, "Spawn Jet", "SpawnJet")
-		buildSliderRow(container, "Height", "Height", -200, 200, " m", true)
-		buildSliderRow(container, "Speed", "Speed", 0, 500, " m/s", true)
-		buildKeybindRow(container, "Teleport WayPoint", "TeleportWayPoint")
-		buildKeybindRow(container, "TeleKill", "TeleKill")
-		buildToggleRow(container, "Panic AirPlane", "PanicAirPlaneToggle")
+
+	ESPAdvanced = function(c)
+		buildToggleControl(
+			c,
+			"Skeleton",
+			function()
+				return Redx.State.ESP.skeleton
+			end,
+			function(v)
+				Redx.ESP.SetElement("skeleton", v)
+			end,
+			"ESP.skeleton"
+		)
+		buildToggleControl(
+			c,
+			"Tracer",
+			function()
+				return Redx.State.ESP.tracer
+			end,
+			function(v)
+				Redx.ESP.SetElement("tracer", v)
+			end,
+			"ESP.tracer"
+		)
+		buildSegmentedSelector(
+			c,
+			"Estilo do tracer",
+			function()
+				return Redx.State.ESP.tracerStyle
+			end,
+			function(t)
+				Redx.ESP.SetTracerStyle(t)
+			end,
+			{
+				{ tag = "base", label = "Base" },
+				{ tag = "top", label = "Topo" },
+				{ tag = "mouse", label = "Mouse" }
+			},
+			"ESP.tracerStyle"
+		)
+		buildToggleControl(
+			c,
+			"Chams (glow 3D)",
+			function()
+				return Redx.State.ESP.chams
+			end,
+			function(v)
+				Redx.ESP.SetElement("chams", v)
+			end,
+			"ESP.chams"
+		)
+		buildKeybindControl(
+			c,
+			"Tecla Chams",
+			"ChamsToggle",
+			function()
+				return Redx.State.ESP.chams
+			end,
+			function()
+				Redx.ESP.SetElement("chams", not Redx.State.ESP.chams)
+			end
+		)
+		buildToggleControl(
+			c,
+			"Team check",
+			function()
+				return Redx.State.ESP.teamCheck
+			end,
+			function(v)
+				Redx.ESP.SetTeamCheck(v)
+			end,
+			"ESP.teamCheck"
+		)
 	end,
-	PanicAirPlane = function(container)
-		buildToggleRow(container, "Auto Spawn M249", "AutoSpawnM249")
-		buildToggleRow(container, "Auto Spawn UMP", "AutoSpawnUMP")
-		buildToggleRow(container, "Auto Spawn Awake", "AutoSpawnAwake")
-		buildToggleRow(container, "Auto Spawn JetPack", "AutoSpawnJetPack")
-		buildSliderRow(container, "Ignore", "Ignore", 0, 2000, " ms", true)
-		buildKeybindRow(container, "Panic AirPlane", "PanicAction")
+
+	ESPConfig = function(c)
+		buildSliderControl(
+			c,
+			"Distância máx",
+			function()
+				return Redx.State.ESP.distance
+			end,
+			function(v)
+				Redx.ESP.SetDistance(v)
+			end,
+			50,
+			2000,
+			" m",
+			"ESP.distance"
+		)
+		buildSliderControl(
+			c,
+			"Espessura",
+			function()
+				return Redx.State.ESP.thickness
+			end,
+			function(v)
+				Redx.ESP.SetThickness(v)
+			end,
+			1,
+			5,
+			" px",
+			"ESP.thickness"
+		)
+		buildSliderControl(
+			c,
+			"Texto ESP",
+			function()
+				return Redx.State.ESP.textSize
+			end,
+			function(v)
+				Redx.ESP.SetTextSize(v)
+			end,
+			10,
+			24,
+			" px",
+			"ESP.textSize"
+		)
 	end,
-	AimbotMain = function(container)
-		buildToggleRow(container, "Enable Aimbot", "AimbotEnabled")
-		buildToggleRow(container, "Silent Aim", "SilentAim")
-		buildToggleRow(container, "Auto Fire", "AutoFire")
-		buildKeybindRow(container, "Aimbot Key", "AimbotEnabled")
-		buildSliderRow(container, "Smooth", "AimSmooth", 1, 100, "%", true)
-		buildSliderRow(container, "FOV", "FOV", 40, 450, "", true)
+
+	ESPColor = function(c)
+		buildPaletteControl(c, function(col)
+			Redx.ESP.SetColor(col)
+		end)
 	end,
-	AimbotFilters = function(container)
-		buildToggleRow(container, "Ignore Knocked", "AimIgnoreKnocked")
-		buildToggleRow(container, "Visible Check", "AimVisibleCheck")
-		buildToggleRow(container, "Draw Target Line", "AimDrawLine")
-		buildSliderRow(container, "Distance", "AimDistance", 20, 600, " m", true)
-		buildToggleRow(container, "Camera FOV", "CameraFOV")
+
+	Godmode = function(c)
+		buildToggleControl(
+			c,
+			"Ativar Godmode",
+			function()
+				return Redx.State.Godmode.enabled
+			end,
+			function(v)
+				Redx.Godmode.Toggle(v)
+			end,
+			"Godmode.enabled"
+		)
+		buildKeybindControl(
+			c,
+			"Tecla Godmode",
+			"GodmodeToggle",
+			function()
+				return Redx.State.Godmode.enabled
+			end,
+			function()
+				Redx.Godmode.Toggle(not Redx.State.Godmode.enabled)
+			end
+		)
 	end,
-	LootItems = function(container)
-		buildToggleRow(container, "Spawn AWM", "SpawnAWM")
-		buildToggleRow(container, "Spawn MedKit", "SpawnMedKit")
-		buildToggleRow(container, "Spawn Gloo Wall", "SpawnGlooWall")
-		buildToggleRow(container, "Spawn Vest Lv4", "SpawnVestLv4")
-		buildSliderRow(container, "Auto Loot", "AutoLootDist", 1, 50, " m", true)
+
+	Performance = function(c)
+		buildToggleControl(
+			c,
+			"FPS Boost",
+			function()
+				return Redx.State.Performance.fpsBoost
+			end,
+			function(v)
+				Redx.Performance.FPSBoost(v)
+			end,
+			"Performance.fpsBoost"
+		)
+		buildKeybindControl(
+			c,
+			"Tecla FPS Boost",
+			"FPSBoostToggle",
+			function()
+				return Redx.State.Performance.fpsBoost
+			end,
+			function()
+				Redx.Performance.FPSBoost(not Redx.State.Performance.fpsBoost)
+			end
+		)
+		buildToggleControl(
+			c,
+			"Remover Sombras",
+			function()
+				return Redx.State.Performance.removeShadows
+			end,
+			function(v)
+				Redx.Performance.RemoveShadows(v)
+			end,
+			"Performance.removeShadows"
+		)
+		buildToggleControl(
+			c,
+			"Texturas Baixas",
+			function()
+				return Redx.State.Performance.lowTextures
+			end,
+			function(v)
+				Redx.Performance.LowTextures(v)
+			end,
+			"Performance.lowTextures"
+		)
 	end,
-	Performance = function(container)
-		buildToggleRow(container, "FPS Boost", "FPSBoost")
-		buildSliderRow(container, "Max FPS", "FPSCap", 30, 240, "", true)
-		buildToggleRow(container, "Remove Shadows", "RemoveShadows")
-		buildToggleRow(container, "Low Textures", "LowTextures")
-		buildToggleRow(container, "Clean Memory", "CleanMemory")
-		buildToggleRow(container, "Ping Stabilizer", "PingStabilizer")
-		buildSliderRow(container, "Render", "RenderScale", 50, 100, "%", true)
-	end,
-	VisualsESP = function(container)
-		buildToggleRow(container, "Enable ESP", "ESPEnabled")
-		buildToggleRow(container, "ESP Box", "ESPBox")
-		buildToggleRow(container, "ESP Skeleton", "ESPSkeleton")
-		buildToggleRow(container, "ESP Lines", "ESPLines")
-		buildToggleRow(container, "ESP Name", "ESPName")
-		buildToggleRow(container, "ESP Health", "ESPHealth")
-		buildToggleRow(container, "Chams Glow", "ChamsGlow")
-		buildSliderRow(container, "Distance", "ESPDistance", 50, 500, " m", true)
+
+	Bypass = function(c)
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 32),
+			Font = Enum.Font.GothamMedium,
+			Text = "Nota: nenhum bypass client-side é 100% ban-proof. Reduz vetores comuns.",
+			TextColor3 = Theme.TextMuted,
+			TextSize = 9.5,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			Parent = c
+		})
+		buildToggleControl(
+			c,
+			"Modo Furtivo",
+			function()
+				return Redx.State.Bypass.stealth
+			end,
+			function(v)
+				Redx.Bypass.Stealth(v)
+			end,
+			"Bypass.stealth"
+		)
+		buildToggleControl(
+			c,
+			"Unlock FPS",
+			function()
+				return Redx.State.Bypass.unlockFPS
+			end,
+			function(v)
+				Redx.Bypass.UnlockFPS(v)
+			end,
+			"Bypass.unlockFPS"
+		)
 	end
 }
 
@@ -1777,6 +3300,7 @@ local function createSectionCard(parent, titleText, iconKind, builderKey, linked
 		TextColor3 = Theme.Accent,
 		TextSize = 11.5,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = header
 	})
 
@@ -1785,11 +3309,11 @@ local function createSectionCard(parent, titleText, iconKind, builderKey, linked
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -26, 0.5, 0),
 			Size = UDim2.new(0, 18, 0, 18),
-			BackgroundColor3 = Store.Windows[linkedWinKey] and Theme.AccentDark or Theme.BadgeBg,
+			BackgroundColor3 = UIState.Windows[linkedWinKey] and Theme.AccentDark or Theme.BadgeBg,
 			BorderSizePixel = 0,
 			Font = Enum.Font.GothamBold,
 			Text = "⧉",
-			TextColor3 = Store.Windows[linkedWinKey] and Theme.White or Theme.TextMuted,
+			TextColor3 = UIState.Windows[linkedWinKey] and Theme.White or Theme.TextMuted,
 			TextSize = 10,
 			AutoButtonColor = false,
 			Parent = header
@@ -1797,10 +3321,10 @@ local function createSectionCard(parent, titleText, iconKind, builderKey, linked
 		addCorner(pinBtn, 4)
 
 		pinBtn.MouseButton1Click:Connect(function()
-			setWindowActive(linkedWinKey, not Store.Windows[linkedWinKey])
+			setWindowActive(linkedWinKey, not UIState.Windows[linkedWinKey])
 		end)
 
-		onWindowChanged(linkedWinKey, function(active)
+		onSync("Window." .. linkedWinKey, function(active)
 			pinBtn.BackgroundColor3 = active and Theme.AccentDark or Theme.BadgeBg
 			pinBtn.TextColor3 = active and Theme.White or Theme.TextMuted
 		end)
@@ -1876,16 +3400,16 @@ end
 
 local FloatingScales = {}
 
-local function createFloatingWindow(winKey, titleText, iconKind, builderKey, defaultPos, rowCount)
-	local fullHeight = 64 + (rowCount * 28)
+local function createFloatingWindow(winKey, titleText, iconKind, builderKey, defaultPos, defaultHeight)
+	local fullHeight = defaultHeight or 230
 	local win = create("Frame", {
 		Name = winKey,
 		Position = defaultPos,
-		Size = UDim2.new(0, 206, 0, fullHeight),
+		Size = UDim2.new(0, 212, 0, fullHeight),
 		BackgroundColor3 = Theme.WindowBg,
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
-		Visible = Store.Windows[winKey],
+		Visible = UIState.Windows[winKey],
 		ZIndex = 30,
 		Parent = ScreenGui
 	})
@@ -1932,12 +3456,13 @@ local function createFloatingWindow(winKey, titleText, iconKind, builderKey, def
 	create("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 24, 0, 0),
-		Size = UDim2.new(1, -48, 1, 0),
+		Size = UDim2.new(1, -54, 1, 0),
 		Font = Enum.Font.GothamBold,
 		Text = titleText,
 		TextColor3 = Theme.White,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		ZIndex = 33,
 		Parent = titleBar
 	})
@@ -2040,12 +3565,12 @@ local function createFloatingWindow(winKey, titleText, iconKind, builderKey, def
 		collapseBtn.Text = isCollapsed and "▶" or "▼"
 		innerScroll.Visible = not isCollapsed
 		if isCollapsed then
-			tween(win, 0.14, { Size = UDim2.new(0, 206, 0, 24) })
+			tween(win, 0.14, { Size = UDim2.new(0, 212, 0, 24) })
 		else
 			if customHeight then
-				win.Size = UDim2.new(0, 206, 0, expandedHeight)
+				win.Size = UDim2.new(0, 212, 0, expandedHeight)
 			else
-				tween(win, 0.14, { Size = UDim2.new(0, 206, 0, expandedHeight) })
+				tween(win, 0.14, { Size = UDim2.new(0, 212, 0, expandedHeight) })
 			end
 		end
 	end
@@ -2059,7 +3584,7 @@ local function createFloatingWindow(winKey, titleText, iconKind, builderKey, def
 	end)
 
 	attachDraggable(titleBar, win)
-	attachResizeAndPullBar(win, winScale, 206, fullHeight, 24, applyCollapse)
+	attachResizeAndPullBar(win, winScale, 212, fullHeight, 24, applyCollapse)
 
 	registerCollapsible({
 		setCollapsed = function(c)
@@ -2067,20 +3592,19 @@ local function createFloatingWindow(winKey, titleText, iconKind, builderKey, def
 		end
 	})
 
-	onWindowChanged(winKey, function(vis)
+	onSync("Window." .. winKey, function(vis)
 		win.Visible = vis
 	end)
 
 	return win
 end
 
-createFloatingWindow("PanicWindow", "Panic AirPlane", "panic", "PanicAirPlane", UDim2.new(0.068, 0, 0.375, 0), 6)
-createFloatingWindow("JetPackWindow", "JetPack", "jetpack", "JetPack", UDim2.new(0.208, 0, 0.232, 0), 7)
-createFloatingWindow("PlayerWindow", "Player", "player", "Player", UDim2.new(0.355, 0, 0.24, 0), 7)
-createFloatingWindow("WeaponWindow", "Weapon", "weapon", "Weapon", UDim2.new(0.355, 0, 0.56, 0), 4)
-createFloatingWindow("WorldWindow", "World", "world", "World", UDim2.new(0.208, 0, 0.58, 0), 6)
-createFloatingWindow("AimbotWindow", "Aimbot", "aimbot", "AimbotMain", UDim2.new(0.068, 0, 0.12, 0), 6)
-createFloatingWindow("VisualsWindow", "Visuals", "visuals", "VisualsESP", UDim2.new(0.208, 0, 0.08, 0), 8)
+createFloatingWindow("AimWindow", "Aim Magnet", "aimbot", "AimMagnet", UDim2.new(0.068, 0, 0.365, 0), 252)
+createFloatingWindow("ESPWindow", "ESP — Principal", "visuals", "ESPMain", UDim2.new(0.212, 0, 0.215, 0), 296)
+createFloatingWindow("ESPAdvWindow", "ESP — Avançado", "visuals", "ESPAdvanced", UDim2.new(0.358, 0, 0.22, 0), 254)
+createFloatingWindow("GodmodeWindow", "Godmode", "shield", "Godmode", UDim2.new(0.358, 0, 0.56, 0), 132)
+createFloatingWindow("PerfWindow", "Performance", "memory", "Performance", UDim2.new(0.212, 0, 0.59, 0), 184)
+createFloatingWindow("BypassWindow", "Bypass", "misc", "Bypass", UDim2.new(0.068, 0, 0.12, 0), 166)
 
 local KeybindBox = create("Frame", {
 	Name = "KeybindOverlay",
@@ -2090,7 +3614,7 @@ local KeybindBox = create("Frame", {
 	BackgroundTransparency = 0.04,
 	BorderSizePixel = 0,
 	ClipsDescendants = true,
-	Visible = Store.Windows.KeybindOverlay,
+	Visible = UIState.Windows.KeybindOverlay,
 	ZIndex = 40,
 	Parent = ScreenGui
 })
@@ -2158,7 +3682,7 @@ create("TextLabel", {
 	Parent = KbHeader
 })
 
-local KbRedLine = create("Frame", {
+create("Frame", {
 	BackgroundColor3 = Theme.Accent,
 	BorderSizePixel = 0,
 	Position = UDim2.new(0, 0, 0, 24),
@@ -2197,12 +3721,12 @@ local function rebuildKeybindList()
 		end
 	end
 	local visibleRows = 0
-	for i = 1, #Store.KeybindOrder do
-		local id = Store.KeybindOrder[i]
-		local kc = Store.Keybinds[id]
+	for i = 1, #UIState.KeybindMeta do
+		local meta = UIState.KeybindMeta[i]
+		local kc = UIState.Keybinds[meta.Id]
 		if kc then
 			visibleRows = visibleRows + 1
-			local isActive = Store.Toggles[id] and true or false
+			local isActive = meta.Get() and true or false
 			local rowBtn = create("TextButton", {
 				BackgroundTransparency = 1,
 				Size = UDim2.new(1, 0, 0, 18),
@@ -2216,7 +3740,7 @@ local function rebuildKeybindList()
 				BackgroundTransparency = 1,
 				Size = UDim2.new(1, -34, 1, 0),
 				Font = Enum.Font.GothamMedium,
-				Text = Store.KeybindLabels[id] or id,
+				Text = meta.Label,
 				TextColor3 = isActive and Theme.Accent or Theme.TextMuted,
 				TextSize = 10.5,
 				TextXAlignment = Enum.TextXAlignment.Left,
@@ -2237,9 +3761,7 @@ local function rebuildKeybindList()
 				Parent = rowBtn
 			})
 			rowBtn.MouseButton1Click:Connect(function()
-				if Store.Toggles[id] ~= nil then
-					setToggle(id, not Store.Toggles[id])
-				end
+				meta.Toggle()
 			end)
 		end
 	end
@@ -2278,8 +3800,8 @@ registerCollapsible({
 	end
 })
 
-onKeybindChanged(rebuildKeybindList)
-onWindowChanged("KeybindOverlay", function(vis)
+onSync("Keybinds", rebuildKeybindList)
+onSync("Window.KeybindOverlay", function(vis)
 	KeybindBox.Visible = vis
 end)
 rebuildKeybindList()
@@ -2566,7 +4088,7 @@ local MainCollapseBtn = create("TextButton", {
 local SubtitleHolder = create("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 28, 0, 0),
-	Size = UDim2.new(1, -140, 1, 0),
+	Size = UDim2.new(1, -148, 1, 0),
 	ZIndex = 15,
 	Parent = TopHeader
 })
@@ -2653,7 +4175,7 @@ local TabsDrawer = create("Frame", {
 	Name = "TabsSelectorPopover",
 	AnchorPoint = Vector2.new(1, 0),
 	Position = UDim2.new(1, -8, 0, 42),
-	Size = UDim2.new(0, 224, 0, 308),
+	Size = UDim2.new(0, 224, 0, 294),
 	BackgroundColor3 = Theme.OverlayBg,
 	BorderSizePixel = 0,
 	Visible = false,
@@ -2719,17 +4241,26 @@ create("UIListLayout", {
 	Parent = DrawerScroll
 })
 
-buildWindowToggleRow(DrawerScroll, "Aba Panic AirPlane", "PanicWindow")
-buildWindowToggleRow(DrawerScroll, "Aba JetPack", "JetPackWindow")
-buildWindowToggleRow(DrawerScroll, "Aba Player", "PlayerWindow")
-buildWindowToggleRow(DrawerScroll, "Aba Weapon", "WeaponWindow")
-buildWindowToggleRow(DrawerScroll, "Aba World", "WorldWindow")
-buildWindowToggleRow(DrawerScroll, "Aba Aimbot", "AimbotWindow")
-buildWindowToggleRow(DrawerScroll, "Aba Visuals", "VisualsWindow")
+buildWindowToggleRow(DrawerScroll, "Aba Aim Magnet", "AimWindow")
+buildWindowToggleRow(DrawerScroll, "Aba ESP Principal", "ESPWindow")
+buildWindowToggleRow(DrawerScroll, "Aba ESP Avançado", "ESPAdvWindow")
+buildWindowToggleRow(DrawerScroll, "Aba Godmode", "GodmodeWindow")
+buildWindowToggleRow(DrawerScroll, "Aba Performance", "PerfWindow")
+buildWindowToggleRow(DrawerScroll, "Aba Bypass", "BypassWindow")
 buildWindowToggleRow(DrawerScroll, "Keybind List", "KeybindOverlay")
 buildWindowToggleRow(DrawerScroll, "Barra Timer (00:00)", "TimerPill")
-buildWindowToggleRow(DrawerScroll, "Barra Contador (0)", "SpectatorPill")
-buildWindowToggleRow(DrawerScroll, "Circulo FOV", "FOVCircle")
+buildWindowToggleRow(DrawerScroll, "Barra Players (0)", "PlayerCountPill")
+buildToggleControl(
+	DrawerScroll,
+	"Mostrar FOV",
+	function()
+		return Redx.State.FOV.enabled
+	end,
+	function(v)
+		Redx.FOV.Toggle(v)
+	end,
+	"FOV.enabled"
+)
 
 local AllBarsFolded = false
 CollapseAllQuickBtn.MouseButton1Click:Connect(function()
@@ -2920,7 +4451,7 @@ local function createSidebarCategory(orderIdx, titleText, iconKind, subTabs)
 			Size = UDim2.new(1, 0, 0, 23),
 			Text = "",
 			AutoButtonColor = false,
-			Visible = Store.SidebarTabsEnabled[st.Id] ~= false,
+			Visible = UIState.SidebarTabsEnabled[st.Id] ~= false,
 			ZIndex = 14,
 			Parent = subList
 		})
@@ -2961,10 +4492,10 @@ local function createSidebarCategory(orderIdx, titleText, iconKind, subTabs)
 			selectSubTab(st.Id)
 		end)
 
-		onSidebarTabChanged(st.Id, function(enabled)
+		onSync("SidebarTab." .. st.Id, function(enabled)
 			btn.Visible = enabled
 			if not enabled and CurrentTabId == st.Id then
-				for fallbackId, isOn in pairs(Store.SidebarTabsEnabled) do
+				for fallbackId, isOn in pairs(UIState.SidebarTabsEnabled) do
 					if isOn and Pages[fallbackId] then
 						selectSubTab(fallbackId)
 						break
@@ -2995,132 +4526,112 @@ end
 createSidebarCategory(1, "Aimbot", "aimbot", {
 	{ Id = "Aimbot", Label = "Aimbot" }
 })
-createSidebarCategory(2, "Memory", "memory", {
-	{ Id = "Exploits", Label = "Exploits" },
-	{ Id = "SpawnItens", Label = "Spawn Itens" },
-	{ Id = "Otimizacao", Label = "Otimização" }
+createSidebarCategory(2, "Visuals", "visuals", {
+	{ Id = "Visuals", Label = "Visuals" },
+	{ Id = "ESPConfig", Label = "ESP Config" }
 })
-createSidebarCategory(3, "Visuals", "visuals", {
-	{ Id = "Visuals", Label = "Visuals" }
+createSidebarCategory(3, "Memory", "memory", {
+	{ Id = "Player", Label = "Player" },
+	{ Id = "Performance", Label = "Performance" }
 })
 createSidebarCategory(4, "Miscellaneous", "misc", {
 	{ Id = "Personalizacao", Label = "Personalização" },
-	{ Id = "Configuracoes", Label = "Configurações" }
+	{ Id = "Config", Label = "Configurações" }
 })
 
 local PageAimbot = createTabPage("Aimbot")
-createSectionCard(PageAimbot.Left, "Aimbot", "aimbot", "AimbotMain", "AimbotWindow")
-createSectionCard(PageAimbot.Right, "Aim Filters", "world", "AimbotFilters", nil)
-
-local PageExploits = createTabPage("Exploits")
-createSectionCard(PageExploits.Left, "Player", "player", "Player", "PlayerWindow")
-createSectionCard(PageExploits.Left, "Weapon", "weapon", "Weapon", "WeaponWindow")
-createSectionCard(PageExploits.Right, "World", "world", "World", "WorldWindow")
-createSectionCard(PageExploits.Right, "JetPack", "jetpack", "JetPack", "JetPackWindow")
-
-local PageSpawn = createTabPage("SpawnItens")
-createSectionCard(PageSpawn.Left, "Panic AirPlane", "panic", "PanicAirPlane", "PanicWindow")
-createSectionCard(PageSpawn.Right, "Spawn Itens", "weapon", "LootItems", nil)
-
-local PageOpt = createTabPage("Otimizacao")
-createSectionCard(PageOpt.Left, "Otimização", "memory", "Performance", nil)
-createSectionCard(PageOpt.Right, "World", "world", "World", "WorldWindow")
+createSectionCard(PageAimbot.Left, "Aim Magnet", "aimbot", "AimMagnet", "AimWindow")
+createSectionCard(PageAimbot.Right, "FOV Circle", "aimbot", "FOVCard", nil)
 
 local PageVisuals = createTabPage("Visuals")
-createSectionCard(PageVisuals.Left, "Visuals", "visuals", "VisualsESP", "VisualsWindow")
-createSectionCard(PageVisuals.Right, "Overlays", "misc", function(body)
-	buildWindowToggleRow(body, "Keybind List", "KeybindOverlay")
-	buildWindowToggleRow(body, "Timer (00:00)", "TimerPill")
-	buildWindowToggleRow(body, "Spectator (0)", "SpectatorPill")
-	buildWindowToggleRow(body, "FOV Circle", "FOVCircle")
-end, nil)
+createSectionCard(PageVisuals.Left, "ESP — Principal", "visuals", "ESPMain", "ESPWindow")
+createSectionCard(PageVisuals.Right, "ESP — Avançado", "visuals", "ESPAdvanced", "ESPAdvWindow")
+
+local PageESPConfig = createTabPage("ESPConfig")
+createSectionCard(PageESPConfig.Left, "ESP — Config", "visuals", "ESPConfig", nil)
+createSectionCard(PageESPConfig.Right, "Cor do ESP", "visuals", "ESPColor", nil)
+
+local PagePlayer = createTabPage("Player")
+createSectionCard(PagePlayer.Left, "Godmode", "shield", "Godmode", "GodmodeWindow")
+createSectionCard(PagePlayer.Right, "Bypass", "misc", "Bypass", "BypassWindow")
+
+local PagePerf = createTabPage("Performance")
+createSectionCard(PagePerf.Left, "Performance", "memory", "Performance", "PerfWindow")
+createSectionCard(PagePerf.Right, "Bypass", "misc", "Bypass", "BypassWindow")
 
 local PagePers = createTabPage("Personalizacao")
 createSectionCard(PagePers.Left, "Abas Flutuantes", "misc", function(body)
-	buildWindowToggleRow(body, "Panic AirPlane", "PanicWindow")
-	buildWindowToggleRow(body, "JetPack", "JetPackWindow")
-	buildWindowToggleRow(body, "Player", "PlayerWindow")
-	buildWindowToggleRow(body, "Weapon", "WeaponWindow")
-	buildWindowToggleRow(body, "World", "WorldWindow")
-	buildWindowToggleRow(body, "Aimbot", "AimbotWindow")
-	buildWindowToggleRow(body, "Visuals", "VisualsWindow")
+	buildWindowToggleRow(body, "Aim Magnet", "AimWindow")
+	buildWindowToggleRow(body, "ESP — Principal", "ESPWindow")
+	buildWindowToggleRow(body, "ESP — Avançado", "ESPAdvWindow")
+	buildWindowToggleRow(body, "Godmode", "GodmodeWindow")
+	buildWindowToggleRow(body, "Performance", "PerfWindow")
+	buildWindowToggleRow(body, "Bypass", "BypassWindow")
 	buildWindowToggleRow(body, "Keybind List", "KeybindOverlay")
 	buildWindowToggleRow(body, "Barra Timer", "TimerPill")
-	buildWindowToggleRow(body, "Barra Contador", "SpectatorPill")
+	buildWindowToggleRow(body, "Barra Players", "PlayerCountPill")
 end, nil)
 
 createSectionCard(PagePers.Right, "Escala & Abas Menu", "visuals", function(body)
-	buildSliderRow(body, "Menu", "MainScale", 45, 145, "%", true)
-	buildSliderRow(body, "Flutuante", "FloatScale", 45, 145, "%", true)
+	buildSliderControl(
+		body,
+		"Escala",
+		function()
+			return UIState.MainScalePct
+		end,
+		function(v)
+			UIState.MainScalePct = v
+			MainScale.Scale = clamp((v / 100) * InitialGlobalScale, 0.38, 1.55)
+			emitSync("UI.MainScale", v)
+		end,
+		45,
+		145,
+		"%",
+		"UI.MainScale"
+	)
+	buildSliderControl(
+		body,
+		"Flutuante",
+		function()
+			return UIState.FloatScalePct
+		end,
+		function(v)
+			UIState.FloatScalePct = v
+			local sc = clamp((v / 100) * InitialGlobalScale, 0.38, 1.55)
+			for i = 1, #FloatingScales do
+				FloatingScales[i].Scale = sc
+			end
+			emitSync("UI.FloatScale", v)
+		end,
+		45,
+		145,
+		"%",
+		"UI.FloatScale"
+	)
+
 	local sidebarItems = {
 		{ Id = "Aimbot", Label = "Aba Aimbot" },
-		{ Id = "Exploits", Label = "Aba Exploits" },
-		{ Id = "SpawnItens", Label = "Aba Spawn Itens" },
-		{ Id = "Otimizacao", Label = "Aba Otimização" },
 		{ Id = "Visuals", Label = "Aba Visuals" },
-		{ Id = "Configuracoes", Label = "Aba Configurações" }
+		{ Id = "ESPConfig", Label = "Aba ESP Config" },
+		{ Id = "Player", Label = "Aba Player" },
+		{ Id = "Performance", Label = "Aba Performance" },
+		{ Id = "Config", Label = "Aba Configurações" }
 	}
 	for i = 1, #sidebarItems do
 		local item = sidebarItems[i]
-		local row = create("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 24),
-			Parent = body
-		})
-		local btn = create("TextButton", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			Text = "",
-			AutoButtonColor = false,
-			Parent = row
-		})
-		create("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, -40, 1, 0),
-			Font = Enum.Font.GothamMedium,
-			Text = item.Label,
-			TextColor3 = Theme.TextSecondary,
-			TextSize = 11,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = row
-		})
-		local sw = create("Frame", {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, 0, 0.5, 0),
-			Size = UDim2.new(0, 32, 0, 16),
-			BackgroundColor3 = Store.SidebarTabsEnabled[item.Id] and Theme.Accent or Theme.ToggleOff,
-			BorderSizePixel = 0,
-			Parent = row
-		})
-		addCorner(sw, 999)
-		local kn = create("Frame", {
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = Store.SidebarTabsEnabled[item.Id] and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-			Size = UDim2.new(0, 12, 0, 12),
-			BackgroundColor3 = Theme.White,
-			BorderSizePixel = 0,
-			Parent = sw
-		})
-		addCorner(kn, 999)
-		btn.MouseButton1Click:Connect(function()
-			local nextVal = not Store.SidebarTabsEnabled[item.Id]
-			setSidebarTabEnabled(item.Id, nextVal)
-			tween(sw, 0.14, { BackgroundColor3 = nextVal and Theme.Accent or Theme.ToggleOff })
-			tween(kn, 0.14, { Position = nextVal and UDim2.new(1, -14, 0.5, 0) or UDim2.new(0, 2, 0.5, 0) })
-		end)
+		buildToggleControl(
+			body,
+			item.Label,
+			function()
+				return UIState.SidebarTabsEnabled[item.Id]
+			end,
+			function(v)
+				setSidebarTabEnabled(item.Id, v)
+			end,
+			"SidebarTab." .. item.Id
+		)
 	end
 end, nil)
-
-onSliderChanged("MainScale", function(pct)
-	MainScale.Scale = clampNum((pct / 100) * InitialGlobalScale, 0.38, 1.55)
-end)
-
-onSliderChanged("FloatScale", function(pct)
-	local s = clampNum((pct / 100) * InitialGlobalScale, 0.38, 1.55)
-	for i = 1, #FloatingScales do
-		FloatingScales[i].Scale = s
-	end
-end)
 
 local MainBarCollapsed = false
 local MainExpandedHeight = MainBaseHeight
@@ -3142,13 +4653,13 @@ local function setMainCollapsedToBar(collapsed, customHeight)
 		TopHeader.Position = UDim2.new(0, 0, 0, 0)
 		TopHeader.Size = UDim2.new(1, 0, 0, 38)
 		SubtitleHolder.Position = UDim2.new(0, 136, 0, 0)
-		SubtitleHolder.Size = UDim2.new(1, -238, 1, 0)
+		SubtitleHolder.Size = UDim2.new(1, -246, 1, 0)
 		tween(MainWindow, 0.15, { Size = UDim2.new(0, MainBaseWidth, 0, 38) })
 	else
 		TopHeader.Position = UDim2.new(0, SidebarWidth + 1, 0, 0)
 		TopHeader.Size = UDim2.new(1, -(SidebarWidth + 1), 0, 38)
 		SubtitleHolder.Position = UDim2.new(0, 28, 0, 0)
-		SubtitleHolder.Size = UDim2.new(1, -140, 1, 0)
+		SubtitleHolder.Size = UDim2.new(1, -148, 1, 0)
 		if customHeight then
 			MainWindow.Size = UDim2.new(0, MainBaseWidth, 0, MainExpandedHeight)
 		else
@@ -3173,55 +4684,55 @@ end)
 
 attachResizeAndPullBar(MainWindow, MainScale, MainBaseWidth, MainBaseHeight, 38, setMainCollapsedToBar)
 
-local PageConfig = createTabPage("Configuracoes")
-createSectionCard(PageConfig.Left, "Configurações", "misc", function(body)
-	buildKeybindRow(body, "Tecla do Painel", "MenuToggle")
+local PageConfig = createTabPage("Config")
+createSectionCard(PageConfig.Left, "Painel", "misc", function(body)
+	buildSliderControl(
+		body,
+		"Escala",
+		function()
+			return UIState.MainScalePct
+		end,
+		function(v)
+			UIState.MainScalePct = v
+			MainScale.Scale = clamp((v / 100) * InitialGlobalScale, 0.38, 1.55)
+			emitSync("UI.MainScale", v)
+		end,
+		45,
+		145,
+		"%",
+		"UI.MainScale"
+	)
 
-	local foldAllBtn = create("TextButton", {
-		BackgroundColor3 = Theme.FloatTitleBg,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 26),
-		Font = Enum.Font.GothamBold,
-		Text = "Guardar / Expandir Todas Barras",
-		TextColor3 = Theme.White,
-		TextSize = 10.5,
-		AutoButtonColor = false,
-		Parent = body
-	})
-	addCorner(foldAllBtn, 5)
-	foldAllBtn.MouseButton1Click:Connect(function()
+	buildKeybindControl(body, "Tecla do Painel", "MenuToggle", nil, nil)
+
+	buildActionButton(body, "Guardar / Expandir Todas Barras", function()
 		AllBarsFolded = not AllBarsFolded
 		for i = 1, #AllCollapsibleEntries do
 			pcall(AllCollapsibleEntries[i].setCollapsed, AllBarsFolded)
 		end
 		setMainCollapsedToBar(AllBarsFolded)
-	end)
+	end, false)
 
-	local resetBtn = create("TextButton", {
-		BackgroundColor3 = Theme.CategoryBg,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 26),
-		Font = Enum.Font.GothamBold,
-		Text = "Resetar Escala & Posições",
-		TextColor3 = Theme.TextPrimary,
-		TextSize = 10.5,
-		AutoButtonColor = false,
-		Parent = body
-	})
-	addCorner(resetBtn, 5)
-	addStroke(resetBtn, Theme.CategoryStroke, 1)
-	resetBtn.MouseButton1Click:Connect(function()
-		setSlider("MainScale", 100)
-		setSlider("FloatScale", 100)
+	buildActionButton(body, "Resetar posição & escala", function()
+		UIState.MainScalePct = 100
+		UIState.FloatScalePct = 100
+		MainScale.Scale = InitialGlobalScale
+		for i = 1, #FloatingScales do
+			FloatingScales[i].Scale = InitialGlobalScale
+		end
+		emitSync("UI.MainScale", 100)
+		emitSync("UI.FloatScale", 100)
 		setMainCollapsedToBar(false, MainBaseHeight)
 		MainWindow.Position = UDim2.new(0.606, 0, 0.062, 0)
-	end)
+	end, false)
 end, nil)
 
-createSectionCard(PageConfig.Right, PANEL_NAME, "player", function(body)
-	local infoA = create("TextLabel", {
+createSectionCard(PageConfig.Left, "Bypass", "misc", "Bypass", "BypassWindow")
+
+createSectionCard(PageConfig.Right, "Sobre", "player", function(body)
+	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 18),
 		Font = Enum.Font.GothamBold,
 		Text = PANEL_NAME,
 		TextColor3 = Theme.Accent,
@@ -3229,38 +4740,33 @@ createSectionCard(PageConfig.Right, PANEL_NAME, "player", function(body)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = body
 	})
-	local infoB = create("TextLabel", {
+	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 18),
+		Size = UDim2.new(1, 0, 0, 16),
 		Font = Enum.Font.GothamMedium,
 		Text = PANEL_SUBTITLE,
 		TextColor3 = Theme.TextSecondary,
-		TextSize = 10.5,
+		TextSize = 10,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = body
 	})
-	local unloadBtn = create("TextButton", {
-		BackgroundColor3 = Theme.BadgeBg,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 26),
-		Font = Enum.Font.GothamBold,
-		Text = "Fechar Painel",
-		TextColor3 = Theme.Accent,
-		TextSize = 10.5,
-		AutoButtonColor = false,
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 16),
+		Font = Enum.Font.GothamMedium,
+		Text = HAS_DRAWING and "Drawing: disponível" or "Drawing: ausente (ESP limitado)",
+		TextColor3 = HAS_DRAWING and Theme.ConnectedText or Theme.Accent,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = body
 	})
-	addCorner(unloadBtn, 5)
-	addStroke(unloadBtn, Theme.FloatStroke, 1)
-	unloadBtn.MouseButton1Click:Connect(function()
-		if env and type(env.RedxPainelUnload) == "function" then
-			pcall(env.RedxPainelUnload)
-		end
-	end)
-	return infoA, infoB
+	buildActionButton(body, "Fechar Painel", function()
+		Redx.UI.Destroy()
+	end, true)
 end, nil)
 
-selectSubTab("Exploits")
+selectSubTab("Aimbot")
+fovRefresh()
 
 trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType ~= Enum.UserInputType.Keyboard then
@@ -3275,10 +4781,11 @@ trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		local target = BindingTargetId
 		BindingTargetId = nil
 		if kc == Enum.KeyCode.Escape or kc == Enum.KeyCode.Backspace then
-			setKeybind(target, nil)
+			UIState.Keybinds[target] = nil
 		else
-			setKeybind(target, kc)
+			UIState.Keybinds[target] = kc
 		end
+		emitSync("Keybinds")
 		return
 	end
 
@@ -3286,7 +4793,7 @@ trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	if Store.Keybinds.MenuToggle and kc == Store.Keybinds.MenuToggle then
+	if UIState.Keybinds.MenuToggle and kc == UIState.Keybinds.MenuToggle then
 		if MiniRestorePill.Visible then
 			MiniRestorePill.Visible = false
 			MainWindow.Visible = true
@@ -3296,53 +4803,71 @@ trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	for id, boundKc in pairs(Store.Keybinds) do
-		if id ~= "MenuToggle" and boundKc == kc and Store.Toggles[id] ~= nil then
-			setToggle(id, not Store.Toggles[id])
+	for i = 1, #UIState.KeybindMeta do
+		local meta = UIState.KeybindMeta[i]
+		local boundKc = UIState.Keybinds[meta.Id]
+		if boundKc and boundKc == kc then
+			meta.Toggle()
 		end
 	end
 end))
 
-trackConn(RunService.RenderStepped:Connect(function(dt)
-	if Store.Toggles.FlyHack and LocalPlayer and LocalPlayer.Character then
-		pcall(function()
-			local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-			local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-			local cam = workspace.CurrentCamera
-			if hrp and hum and cam then
-				local moveDir = hum.MoveDirection
-				local spd = clampNum(Store.Sliders.Speed * 0.22, 8, 160)
-				local yOffset = clampNum(Store.Sliders.Height * 0.05, -25, 25)
-				if moveDir.Magnitude > 0 then
-					hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * spd, yOffset, moveDir.Z * spd)
-				end
-			end
-		end)
-	end
-end))
+Redx.UI = {}
 
-local function unloadAll()
+Redx.UI.Show = function()
+	if ScreenGui then
+		ScreenGui.Enabled = true
+	end
+	MiniRestorePill.Visible = false
+	MainWindow.Visible = true
+end
+
+Redx.UI.Hide = function()
+	if ScreenGui then
+		ScreenGui.Enabled = false
+	end
+end
+
+Redx.UI.Destroy = function()
 	for i = 1, #Connections do
 		pcall(function()
 			Connections[i]:Disconnect()
 		end)
 	end
 	Connections = {}
-	updatePlayerESP(false)
+	for plr in pairs(ESPData) do
+		espDestroy(plr)
+	end
+	chamsClear()
+	if godLoop then
+		pcall(function()
+			godLoop:Disconnect()
+		end)
+		godLoop = nil
+	end
+	if godRespawn then
+		pcall(function()
+			godRespawn:Disconnect()
+		end)
+		godRespawn = nil
+	end
+	if aimLineObj then
+		dRemove(aimLineObj)
+		aimLineObj = nil
+	end
 	pcall(function()
-		if workspace.CurrentCamera then
-			workspace.CurrentCamera.FieldOfView = DefaultCameraFOV
+		if ScreenGui then
+			ScreenGui:Destroy()
 		end
 	end)
-	if ScreenGui then
-		pcall(function()
-			ScreenGui:Destroy()
-		end)
+	if env then
+		env.Redx = nil
+		env.RedxPainelUnload = nil
 	end
 end
 
 if env then
-	env.RedxPainelUnload = unloadAll
+	env.RedxPainelUnload = Redx.UI.Destroy
 	env.RedxPainelSetLogo = resolveLogoUrl
 end
 
