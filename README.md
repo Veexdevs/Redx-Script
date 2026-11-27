@@ -519,7 +519,7 @@ end
 
 local PanelDestroyed = false
 local Redx = {
-	_v = "11.2",
+	_v = "14.0",
 	HasDrawing = HAS_DRAWING
 }
 if env then
@@ -532,7 +532,8 @@ Redx.State = {
 		target = "torso",
 		smooth = 15,
 		radius = 235,
-		drawAimLine = false
+		drawAimLine = false,
+		prediction = { enabled = false, strength = 0.18, lagComp = 0.06 }
 	},
 	FOV = {
 		enabled = false,
@@ -566,11 +567,16 @@ Redx.State = {
 	Performance = {
 		fpsBoost = false,
 		removeShadows = false,
-		lowTextures = false
+		lowTextures = false,
+		clearField = false,
+		removeParticles = false,
+		removeDecals = false,
+		removeSounds = false
 	},
 	Bypass = {
 		stealth = false,
-		unlockFPS = false
+		unlockFPS = false,
+		autoRandomize = false
 	}
 }
 
@@ -700,11 +706,37 @@ local function aimGetTargetPart(plr)
 	end
 end
 
+local VelocityTracker = setmetatable({}, { __mode = "k" })
+
+local function aimUpdateVel(plr, part)
+	local now = os.clock()
+	local entry = VelocityTracker[plr]
+	if not entry or entry.part ~= part or now - entry.time > 1 then
+		VelocityTracker[plr] = { part = part, pos = part.Position, time = now, vel = Vector3.zero }
+		return Vector3.zero
+	end
+	local dt = now - entry.time
+	if dt > 0.0005 then
+		local instVel = (part.Position - entry.pos) / dt
+		entry.vel = entry.vel:Lerp(instVel, 0.4)
+		entry.pos = part.Position
+		entry.time = now
+	end
+	return entry.vel
+end
+
+local function aimPredict(plr, part)
+	local S = Redx.State.Aimbot.prediction
+	if not S.enabled then return part.Position end
+	local vel = aimUpdateVel(plr, part)
+	local dist = (part.Position - camera.CFrame.Position).Magnitude
+	local tt = S.lagComp + dist / 3500
+	return part.Position + vel * tt * S.strength
+end
+
 local function aimFindBest()
 	camera = workspace.CurrentCamera or camera
-	if not camera then
-		return nil
-	end
+	if not camera then return nil end
 	local S = Redx.State.Aimbot
 	local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
 	local best, bestD = nil, S.radius
@@ -714,11 +746,12 @@ local function aimFindBest()
 			if hum and hum.Health > 0 then
 				local part = aimGetTargetPart(plr)
 				if part then
-					local sp, onScreen = camera:WorldToViewportPoint(part.Position)
+					local aimPos = aimPredict(plr, part)
+					local sp, onScreen = camera:WorldToViewportPoint(aimPos)
 					if onScreen then
 						local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
 						if d < bestD then
-							best, bestD = part, d
+							best, bestD = { part = part, aimPos = aimPos, plr = plr }, d
 						end
 					end
 				end
@@ -731,6 +764,7 @@ end
 Redx.Aimbot.Toggle = function(s)
 	local b = s and true or false
 	Redx.State.Aimbot.enabled = b
+	VelocityTracker = setmetatable({}, { __mode = "k" })
 	emitSync("Aimbot.enabled", b)
 	emitSync("Keybinds")
 end
@@ -738,6 +772,7 @@ end
 Redx.Aimbot.SetTarget = function(t)
 	if t == "head" or t == "torso" then
 		Redx.State.Aimbot.target = t
+		VelocityTracker = setmetatable({}, { __mode = "k" })
 		emitSync("Aimbot.target", t)
 	end
 end
@@ -759,6 +794,23 @@ Redx.Aimbot.SetDrawLine = function(s)
 	Redx.State.Aimbot.drawAimLine = b
 	Redx.State.ESP.aimLine = b
 	emitSync("Aimbot.drawAimLine", b)
+end
+
+Redx.Aimbot.SetPrediction = function(s)
+	Redx.State.Aimbot.prediction.enabled = s and true or false
+	VelocityTracker = setmetatable({}, { __mode = "k" })
+	emitSync("Aimbot.prediction.enabled", Redx.State.Aimbot.prediction.enabled)
+end
+
+Redx.Aimbot.SetPredictionStrength = function(v)
+	local n = clamp(tonumber(v) or 0.18, 0, 1)
+	Redx.State.Aimbot.prediction.strength = n
+	emitSync("Aimbot.prediction.strength", math.floor(n * 100))
+end
+
+Redx.Aimbot.SetLagComp = function(ms)
+	Redx.State.Aimbot.prediction.lagComp = clamp((tonumber(ms) or 60) / 1000, 0, 0.3)
+	emitSync("Aimbot.prediction.lagComp", math.floor(Redx.State.Aimbot.prediction.lagComp * 1000))
 end
 
 local aimLineObj = nil
@@ -788,7 +840,7 @@ trackConn(RunService.RenderStepped:Connect(function(dt)
 		return
 	end
 	pcall(function()
-		local goal = CFrame.new(camera.CFrame.Position, target.Position)
+		local goal = CFrame.new(camera.CFrame.Position, target.aimPos)
 		local t = (100 - S.Aimbot.smooth) / 100
 		local alpha = clamp(t * (dt or 0.016) * 60, 0, 1)
 		camera.CFrame = camera.CFrame:Lerp(goal, alpha)
@@ -796,7 +848,7 @@ trackConn(RunService.RenderStepped:Connect(function(dt)
 
 	if aimLineObj then
 		if S.Aimbot.drawAimLine then
-			local sp, vis = camera:WorldToViewportPoint(target.Position)
+			local sp, vis = camera:WorldToViewportPoint(target.aimPos)
 			if sp and vis then
 				dSet(aimLineObj, "From", Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2))
 				dSet(aimLineObj, "To", Vector2.new(sp.X, sp.Y))
@@ -1377,6 +1429,7 @@ trackConn(RunService.RenderStepped:Connect(function()
 end))
 
 trackConn(Players.PlayerRemoving:Connect(function(plr)
+	VelocityTracker[plr] = nil
 	espDestroy(plr)
 	chamsRemove(plr)
 end))
@@ -1514,6 +1567,116 @@ Redx.Performance.LowTextures = function(s)
 	emitSync("Performance.lowTextures", b)
 end
 
+local fieldStop, fieldRestore
+
+do
+	local tracked = setmetatable({}, { __mode = "k" })
+	local addedConn
+	local function isLocalChar(inst)
+		local char = LocalPlayer and LocalPlayer.Character
+		local ancestor = inst
+		while ancestor do
+			if ancestor == char then
+				return true
+			end
+			ancestor = ancestor.Parent
+		end
+		return false
+	end
+	local function effectKind(inst)
+		if inst:IsA("Sound") then
+			return "removeSounds", "Volume", 0
+		end
+		if isLocalChar(inst) then
+			return nil
+		end
+		if inst:IsA("ParticleEmitter") or inst:IsA("Smoke") or inst:IsA("Fire")
+			or inst:IsA("Sparkles") or inst:IsA("Trail") or inst:IsA("Beam") then
+			return "removeParticles", "Enabled", false
+		end
+		if inst:IsA("Decal") or inst:IsA("Texture") then
+			return "removeDecals", "Transparency", 1
+		end
+	end
+	local function restoreOne(inst, original)
+		pcall(function()
+			inst[original.property] = original.value
+		end)
+		tracked[inst] = nil
+	end
+	fieldRestore = function()
+		for inst, original in pairs(tracked) do
+			restoreOne(inst, original)
+		end
+	end
+	fieldStop = function()
+		if addedConn then
+			addedConn:Disconnect()
+			addedConn = nil
+		end
+	end
+	local function applyOne(inst)
+		if not inst or not inst.Parent then
+			return
+		end
+		local kind, property, value = effectKind(inst)
+		if not kind or not Redx.State.Performance[kind] then
+			return
+		end
+		pcall(function()
+			if not tracked[inst] then
+				tracked[inst] = { kind = kind, property = property, value = inst[property] }
+			end
+			inst[property] = value
+		end)
+	end
+	local function refresh()
+		local state = Redx.State.Performance
+		for inst, original in pairs(tracked) do
+			if not state[original.kind] or (original.kind ~= "removeSounds" and isLocalChar(inst)) then
+				restoreOne(inst, original)
+			end
+		end
+		if not (state.removeParticles or state.removeDecals or state.removeSounds) then
+			fieldStop()
+			return
+		end
+		if not addedConn then
+			addedConn = workspace.DescendantAdded:Connect(applyOne)
+		end
+		for _, inst in ipairs(workspace:GetDescendants()) do
+			applyOne(inst)
+		end
+	end
+	local function sync()
+		local state = Redx.State.Performance
+		state.clearField = state.removeParticles and state.removeDecals
+		refresh()
+		emitSync("Performance.clearField", state.clearField)
+		emitSync("Performance.removeParticles", state.removeParticles)
+		emitSync("Performance.removeDecals", state.removeDecals)
+		emitSync("Performance.removeSounds", state.removeSounds)
+	end
+	Redx.Performance.ClearField = function(s)
+		local b = s and true or false
+		Redx.State.Performance.removeParticles = b
+		Redx.State.Performance.removeDecals = b
+		sync()
+	end
+	Redx.Performance.RemoveParticles = function(s)
+		Redx.State.Performance.removeParticles = s and true or false
+		sync()
+	end
+	Redx.Performance.RemoveDecals = function(s)
+		Redx.State.Performance.removeDecals = s and true or false
+		sync()
+	end
+	Redx.Performance.RemoveSounds = function(s)
+		Redx.State.Performance.removeSounds = s and true or false
+		sync()
+	end
+end
+
 Redx.Bypass = {}
 
 Redx.Bypass.Stealth = function(s)
@@ -1523,7 +1686,7 @@ Redx.Bypass.Stealth = function(s)
 		pcall(function()
 			ScreenGui.Name = "UI_" .. tostring(math.random(100000, 999999))
 		end)
-	elseif ScreenGui then
+	elseif ScreenGui and not Redx.State.Bypass.autoRandomize then
 		pcall(function()
 			ScreenGui.Name = "RedxPainelGui"
 		end)
@@ -1540,6 +1703,40 @@ Redx.Bypass.UnlockFPS = function(s)
 		end
 	end)
 	emitSync("Bypass.unlockFPS", b)
+end
+
+do
+	local randomizeConn
+	Redx.Bypass.AutoRandomize = function(s)
+		local b = s and not PanelDestroyed or false
+		Redx.State.Bypass.autoRandomize = b
+		if randomizeConn then
+			randomizeConn:Disconnect()
+			randomizeConn = nil
+		end
+		if b then
+			local deadline = os.clock() + math.random(15, 45)
+			randomizeConn = RunService.Heartbeat:Connect(function()
+				if os.clock() >= deadline then
+					deadline = os.clock() + math.random(15, 45)
+					if ScreenGui and ScreenGui.Parent then
+						pcall(function()
+							ScreenGui.Name = "UI_" .. tostring(math.random(1000000, 9999999))
+						end)
+					end
+				end
+			end)
+		elseif ScreenGui and not Redx.State.Bypass.stealth then
+			ScreenGui.Name = "RedxPainelGui"
+		end
+		emitSync("Bypass.autoRandomize", b)
+	end
+end
+
+Redx.Bypass.Panic = function()
+	if Redx.UI and type(Redx.UI.Destroy) == "function" then
+		Redx.UI.Destroy()
+	end
 end
 
 local ResolvedLogoAsset = nil
@@ -2652,82 +2849,65 @@ local function buildSegmentedSelector(parent, labelText, getter, onPick, options
 	return row
 end
 
+local ESP_PALETTES = {
+	{ id = "Redx",   color = Color3.fromRGB(230, 0, 28) },
+	{ id = "Neon",   color = Color3.fromRGB(0, 255, 255) },
+	{ id = "Cyber",  color = Color3.fromRGB(255, 230, 0) },
+	{ id = "Ghost",  color = Color3.fromRGB(255, 255, 255) },
+	{ id = "Toxic",  color = Color3.fromRGB(0, 255, 102) },
+	{ id = "Blood",  color = Color3.fromRGB(139, 0, 0) },
+	{ id = "Violet", color = Color3.fromRGB(180, 0, 255) },
+	{ id = "Ice",    color = Color3.fromRGB(153, 230, 255) }
+}
+
 local function buildPaletteControl(parent, onPick)
-	local wrap = create("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 68),
-		Parent = parent
-	})
-
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 14),
-		Font = Enum.Font.GothamBold,
-		Text = "Cor do ESP",
-		TextColor3 = Theme.Accent,
-		TextSize = 10.5,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = wrap
-	})
-
+	local wrap = create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 120), Parent = parent })
+	create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 14), Font = Enum.Font.GothamBold, Text = "Paleta (holograma / ESP)", TextColor3 = Theme.Accent, TextSize = 10.5, TextXAlignment = Enum.TextXAlignment.Left, Parent = wrap })
+	local presetBox = create("Frame", { BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 20), Parent = wrap })
+	local presetBtns = {}
+	for i = 1, #ESP_PALETTES do
+		local p = ESP_PALETTES[i]
+		local b = create("TextButton", { BackgroundColor3 = p.color, BorderSizePixel = 0, Position = UDim2.new((i - 1) / #ESP_PALETTES, 1, 0, 0), Size = UDim2.new(1 / #ESP_PALETTES, -3, 1, 0), Text = "", AutoButtonColor = false, Parent = presetBox })
+		addCorner(b, 3)
+		presetBtns[p.id] = { stroke = addStroke(b, Theme.CardStroke, 1.2), color = p.color }
+		b.MouseButton1Click:Connect(function() onPick(p.color) end)
+	end
+	create("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 44), Size = UDim2.new(1, 0, 0, 12), Font = Enum.Font.GothamMedium, Text = "Ajuste fino", TextColor3 = Theme.TextMuted, TextSize = 9, TextXAlignment = Enum.TextXAlignment.Left, Parent = wrap })
 	local palette = {
-		Color3.fromRGB(230, 0, 28),
-		Color3.fromRGB(255, 80, 80),
-		Color3.fromRGB(255, 140, 0),
-		Color3.fromRGB(255, 220, 0),
-		Color3.fromRGB(100, 255, 100),
-		Color3.fromRGB(0, 220, 220),
-		Color3.fromRGB(0, 140, 255),
-		Color3.fromRGB(180, 60, 255),
-		Color3.fromRGB(255, 60, 200),
-		Color3.fromRGB(255, 255, 255),
-		Color3.fromRGB(120, 120, 120),
-		Color3.fromRGB(0, 0, 0)
+		Color3.fromRGB(230, 0, 28), Color3.fromRGB(255, 80, 80),
+		Color3.fromRGB(255, 140, 0), Color3.fromRGB(255, 220, 0),
+		Color3.fromRGB(100, 255, 100), Color3.fromRGB(0, 220, 220),
+		Color3.fromRGB(0, 140, 255), Color3.fromRGB(180, 60, 255),
+		Color3.fromRGB(255, 60, 200), Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(120, 120, 120), Color3.fromRGB(0, 0, 0)
 	}
-
-	local gridBox = create("Frame", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 18),
-		Size = UDim2.new(1, 0, 0, 48),
-		Parent = wrap
-	})
-
+	local gridBox = create("Frame", { BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 60), Size = UDim2.new(1, 0, 0, 48), Parent = wrap })
 	local strokes = {}
 	for i = 1, #palette do
 		local col = palette[i]
 		local colIdx = (i - 1) % 6
 		local rowIdx = math.floor((i - 1) / 6)
-		local sw = create("TextButton", {
-			BackgroundColor3 = col,
-			BorderSizePixel = 0,
-			Position = UDim2.new(colIdx / 6, 1, 0, rowIdx * 24),
-			Size = UDim2.new(1 / 6, -4, 0, 20),
-			Text = "",
-			AutoButtonColor = false,
-			Parent = gridBox
-		})
+		local sw = create("TextButton", { BackgroundColor3 = col, BorderSizePixel = 0, Position = UDim2.new(colIdx / 6, 1, 0, rowIdx * 24), Size = UDim2.new(1 / 6, -4, 0, 20), Text = "", AutoButtonColor = false, Parent = gridBox })
 		addCorner(sw, 4)
-		local st = addStroke(sw, Theme.CardStroke, 1.2)
-		strokes[i] = { col = col, stroke = st }
-
-		sw.MouseButton1Click:Connect(function()
-			onPick(col)
-		end)
+		strokes[i] = { col = col, stroke = addStroke(sw, Theme.CardStroke, 1.2) }
+		sw.MouseButton1Click:Connect(function() onPick(col) end)
 	end
-
 	local function refreshSelected()
 		local cur = Redx.State.ESP.color
 		for i = 1, #strokes do
-			local item = strokes[i]
-			local same = (item.col == cur)
-			item.stroke.Color = same and Theme.White or Theme.CardStroke
-			item.stroke.Thickness = same and 2 or 1.2
+			local it = strokes[i]
+			local same = (it.col == cur)
+			it.stroke.Color = same and Theme.White or Theme.CardStroke
+			it.stroke.Thickness = same and 2 or 1.2
+		end
+		for _, ps in pairs(presetBtns) do
+			local same = (ps.color == cur)
+			ps.stroke.Color = same and Theme.White or Theme.CardStroke
+			ps.stroke.Thickness = same and 2 or 1.2
 		end
 	end
-
 	refreshSelected()
 	onSync("ESP.color", refreshSelected)
-
 	return wrap
 end
 
@@ -2937,6 +3117,23 @@ local SectionBuilders = {
 			450,
 			" px",
 			"Aimbot.radius"
+		)
+		buildToggleControl(c, "Aimbot Robot (predição)",
+			function() return Redx.State.Aimbot.prediction.enabled end,
+			function(v) Redx.Aimbot.SetPrediction(v) end,
+			"Aimbot.prediction.enabled"
+		)
+		buildSliderControl(c, "Predição",
+			function() return math.floor(Redx.State.Aimbot.prediction.strength * 100) end,
+			function(v) Redx.Aimbot.SetPredictionStrength(v / 100) end,
+			0, 100, "%",
+			"Aimbot.prediction.strength"
+		)
+		buildSliderControl(c, "Lag comp",
+			function() return math.floor(Redx.State.Aimbot.prediction.lagComp * 1000) end,
+			function(v) Redx.Aimbot.SetLagComp(v) end,
+			0, 300, " ms",
+			"Aimbot.prediction.lagComp"
 		)
 		buildKeybindControl(
 			c,
@@ -3282,6 +3479,27 @@ local SectionBuilders = {
 			end,
 			"Performance.lowTextures"
 		)
+		buildToggleControl(c, "Limpar campo",
+			function() return Redx.State.Performance.clearField end,
+			function(v) Redx.Performance.ClearField(v) end,
+			"Performance.clearField"
+		)
+		buildToggleControl(c, "Remover partículas",
+			function() return Redx.State.Performance.removeParticles end,
+			function(v) Redx.Performance.RemoveParticles(v) end,
+			"Performance.removeParticles"
+		)
+		buildToggleControl(c, "Remover decals",
+			function() return Redx.State.Performance.removeDecals end,
+			function(v) Redx.Performance.RemoveDecals(v) end,
+			"Performance.removeDecals"
+		)
+		buildToggleControl(c, "Silenciar sons",
+			function() return Redx.State.Performance.removeSounds end,
+			function(v) Redx.Performance.RemoveSounds(v) end,
+			"Performance.removeSounds"
+		)
+
 	end,
 
 	Bypass = function(c)
@@ -3318,6 +3536,15 @@ local SectionBuilders = {
 			end,
 			"Bypass.unlockFPS"
 		)
+		buildToggleControl(c, "Auto-randomizar",
+			function() return Redx.State.Bypass.autoRandomize end,
+			function(v) Redx.Bypass.AutoRandomize(v) end,
+			"Bypass.autoRandomize"
+		)
+		buildActionButton(c, "PANIC — desligar tudo", function()
+			Redx.Bypass.Panic()
+		end, true)
+
 	end
 }
 
@@ -4974,6 +5201,22 @@ Redx.UI.Destroy = function()
 	if Redx.State.Godmode.enabled then
 		Redx.Godmode.Toggle(false)
 	end
+	Redx.Bypass.AutoRandomize(false)
+	fieldStop()
+	Redx.State.Performance.clearField = false
+	Redx.State.Performance.removeParticles = false
+	Redx.State.Performance.removeDecals = false
+	Redx.State.Performance.removeSounds = false
+	fieldRestore()
+	VelocityTracker = setmetatable({}, { __mode = "k" })
+	Redx.State.Aimbot.enabled = false
+	Redx.State.Aimbot.drawAimLine = false
+	Redx.State.Aimbot.prediction.enabled = false
+	Redx.State.FOV.enabled = false
+	Redx.State.ESP.enabled = false
+	Redx.State.ESP.chams = false
+	Redx.State.ESP.aimLine = false
+	Redx.State.Bypass.stealth = false
 	Redx.State.Performance.fpsBoost = false
 	Redx.State.Performance.removeShadows = false
 	Redx.State.Performance.lowTextures = false
